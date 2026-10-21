@@ -1,0 +1,72 @@
+name: Klipo
+
+on:
+  workflow_dispatch:
+    inputs:
+      adim:
+        description: 'Ne yapilsin?'
+        required: true
+        type: choice
+        options:
+          - '1 - klipo.zip dosyasini ac'
+          - '2 - APK uret'
+      url:
+        description: 'Sadece 2. adim icin: Render adresin (https://....onrender.com)'
+        required: false
+        type: string
+
+jobs:
+  ac:
+    if: startsWith(inputs.adim, '1')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Zip dosyasini ac ve depoya ekle
+        run: |
+          unzip -q klipo.zip
+          rm -rf klipo/.github
+          cp -a klipo/. .
+          rm -rf klipo klipo.zip
+          git config user.name "klipo-bot"
+          git config user.email "klipo-bot@users.noreply.github.com"
+          git add -A
+          git commit -m "Klipo dosyalari acildi"
+          git push
+
+  apk:
+    if: startsWith(inputs.adim, '2')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: APK ve AAB derle
+        env:
+          INPUT_URL: ${{ inputs.url }}
+        run: |
+          URL="${INPUT_URL:-https://klipo.onrender.com}"
+          echo "Uygulama su adresi acacak: $URL"
+          gradle -p android assembleRelease bundleRelease --no-daemon \
+            -PklipoUrl="$URL" -PversionCode="${GITHUB_RUN_NUMBER}" -PversionName="1.0.${GITHUB_RUN_NUMBER}"
+          mkdir -p out
+          cp android/app/build/outputs/apk/release/*.apk out/Klipo.apk
+          cp android/app/build/outputs/bundle/release/*.aab out/Klipo.aab
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Klipo-android
+          path: out/
+          if-no-files-found: error
