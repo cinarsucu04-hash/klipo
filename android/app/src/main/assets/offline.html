@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="tr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Klipo</title>
+<style>
+  html,body{margin:0;height:100%;background:#0a0a0f;color:#f4f4f8;font-family:system-ui,sans-serif}
+  body{display:grid;place-items:center;text-align:center;padding:24px;box-sizing:border-box}
+  h1{font-size:24px;margin:0 0 8px} p{color:#9a9aae;margin:0 0 22px;line-height:1.5}
+  button{border:0;border-radius:12px;padding:13px 28px;font-size:16px;font-weight:700;color:#fff;
+         background:linear-gradient(135deg,#8b5cf6,#ff3d81)}
+</style></head>
+<body><div>
+  <h1>Bağlanılamadı</h1>
+  <p>İnternet bağlantını kontrol et. Sunucu uykudaysa uyanması<br>bir dakikaya kadar sürebilir.</p>
+  <button id="retry">Tekrar dene</button>
+</div>
+<script>
+  var u = new URLSearchParams(location.search).get('u');
+  document.getElementById('retry').onclick = function () { if (u) location.replace(u); };
+</script></body></html>

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+  <title>Klipo</title>
+  <meta name="description" content="Klipo — kısa videolar, hikayeler ve sohbet. Anı yakala, paylaş, keşfet.">
+  <meta name="theme-color" content="#0a0a0f" id="meta-theme">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" type="image/png" href="/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="stylesheet" href="/css/app.css">
+  <script src="/js/theme.js"></script>
+</head>
+<body>
+  <div id="app">
+    <main id="view" aria-live="polite"></main>
+    <nav id="nav" aria-label="Ana gezinme"></nav>
+    <div id="overlays"></div>
+  </div>
+  <div id="toasts" role="status" aria-live="polite"></div>
+  <div id="boot" class="boot"><div class="boot-logo"><img src="/icons/icon-192.png" alt="" width="84" height="84"></div></div>
+  <noscript>Klipo'yu kullanmak için JavaScript gerekli.</noscript>
+
+  <script src="/js/core.js" defer></script>
+  <script src="/js/components.js" defer></script>
+  <script src="/js/view-feed.js" defer></script>
+  <script src="/js/view-explore.js" defer></script>
+  <script src="/js/view-upload.js" defer></script>
+  <script src="/js/view-inbox.js" defer></script>
+  <script src="/js/view-profile.js" defer></script>
+  <script src="/js/view-settings.js" defer></script>
+  <script src="/js/view-admin.js" defer></script>
+  <script src="/js/app.js" defer></script>
+</body>
+</html>

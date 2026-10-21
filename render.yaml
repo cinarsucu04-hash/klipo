@@ -1,0 +1,29 @@
+# Render Blueprint — repo köküne koyun, Render'da "New > Blueprint" ile bağlayın.
+services:
+  - type: web
+    name: klipo
+    runtime: node
+    plan: free
+    buildCommand: npm install --omit=dev
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URL
+        sync: false          # MongoDB Atlas bağlantı adresi (panelden elle girin)
+      - key: DB_NAME
+        value: klipo
+      - key: SESSION_SECRET
+        generateValue: true  # Render rastgele üretir
+      - key: ADMIN_USERNAMES
+        value: admin
+      - key: ADMIN_SETUP_CODE
+        sync: false          # Yönetici hesabı açmak için gizli kod (panelden elle girin)
+      - key: STORAGE
+        value: gridfs        # medya MongoDB'de kalıcı saklanır (Render ücretsiz diskte kalıcı değil)
+      - key: MAX_VIDEO_MB
+        value: "60"

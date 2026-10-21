@@ -1,0 +1,60 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Uygulamanın açacağı adres (Render). -PklipoUrl=... ile ya da gradle.properties içinden değişir.
+def klipoUrl = (project.findProperty('klipoUrl') ?: 'https://klipo.onrender.com').toString().trim().replaceAll('/+$', '')
+if (!klipoUrl.startsWith('https://') && !klipoUrl.startsWith('http://10.0.2.2')) {
+    throw new GradleException("klipoUrl https:// ile başlamalı (şu an: ${klipoUrl})")
+}
+def klipoHost = new URI(klipoUrl).host
+
+// Gerçek yayın imzası için ortam değişkenleri (GitHub Actions secrets). Yoksa debug anahtarıyla imzalanır:
+// telefona kurulur ama Play Store'a yüklenemez.
+def ksFile = System.getenv('KEYSTORE_FILE')
+
+android {
+    namespace 'app.klipo.mobile'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'app.klipo.mobile'
+        minSdk 24
+        targetSdk 34
+        versionCode (project.findProperty('versionCode') ?: '1').toString().toInteger()
+        versionName (project.findProperty('versionName') ?: '1.0.0').toString()
+        buildConfigField 'String', 'BASE_URL', "\"${klipoUrl}\""
+        manifestPlaceholders = [klipoHost: klipoHost]
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    signingConfigs {
+        release {
+            if (ksFile) {
+                storeFile file(ksFile)
+                storePassword System.getenv('KEYSTORE_PASSWORD')
+                keyAlias System.getenv('KEY_ALIAS')
+                keyPassword System.getenv('KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig ksFile ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+}
