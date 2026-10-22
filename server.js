@@ -12,6 +12,7 @@ const storage = require('./lib/storage');
 const { HttpError, wrap, sleep } = require('./lib/helpers');
 const mw = require('./lib/middleware');
 
+let sessionMw = null; // oturum ara katmanı DB bağlanınca kurulur
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 1); // Render, ters proxy arkasında çalışır (gerçek IP ve https için)
@@ -41,8 +42,20 @@ app.use(
 app.use(compression());
 
 // ------------------------------------------------------------ sağlık kontrolü (DB'den bağımsız)
+// Veritabanı hatasını (ham mesajı sızdırmadan) kısa bir koda çevirir; arayüz buna göre yol gösterir
+function dbErrorCode() {
+  if (db.state.ready) return '';
+  if (!cfg.MONGO_URL) return 'MONGO_URL_YOK';
+  const m = String(db.state.error || '');
+  if (!m) return '';
+  if (/bad auth|authentication failed/i.test(m)) return 'SIFRE';
+  if (/ENOTFOUND|querySrv|ECONNREFUSED|Invalid (scheme|connection string)|MongoParseError/i.test(m)) return 'ADRES';
+  if (/timed out|ReplicaSetNoPrimary|ssl|tls|selection/i.test(m)) return 'AG';
+  return 'DIGER';
+}
+
 app.get('/healthz', (req, res) => {
-  res.status(200).json({ ok: true, db: db.state.ready, uptime: Math.round(process.uptime()) });
+  res.status(200).json({ ok: true, db: db.state.ready && !!sessionMw, dbError: dbErrorCode(), uptime: Math.round(process.uptime()) });
 });
 
 // ------------------------------------------------------------ statik dosyalar
@@ -61,7 +74,6 @@ app.use(
 );
 
 // ------------------------------------------------------------ oturum (DB bağlanınca kurulur)
-let sessionMw = null;
 function buildSession() {
   sessionMw = session({
     name: 'klipo.sid',
@@ -176,6 +188,7 @@ async function connectWithRetry() {
     } catch (e) {
       db.state.error = e.message;
       console.error(`[db] bağlantı denemesi ${attempt} başarısız: ${e.message}`);
+      await db.close(); // yarım kalan bağlantıyı bırak; sonraki denemede yenisi kurulur
       if (!cfg.MONGO_URL) {
         console.error('[db] MONGO_URL tanımlı değil. Render > Environment bölümünden ekleyin.');
       }

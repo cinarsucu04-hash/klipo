@@ -143,9 +143,28 @@
     m.textContent = text;
   }
 
+  // Sunucu ayakta ama veritabanı yoksa kullanıcıya gerçek nedeni söyle ("internet yok" demek yanıltıcı)
+  const DB_HINTS = {
+    MONGO_URL_YOK: 'Sunucu çalışıyor ama MONGO_URL tanımlı değil. Render > Environment bölümüne ekle.',
+    SIFRE: 'Sunucu çalışıyor ama veritabanı kullanıcı adı/şifresi hatalı. Render > Environment > MONGO_URL değerini kontrol et.',
+    AG: 'Sunucu çalışıyor ama veritabanına ulaşamıyor. Atlas > Network Access bölümüne 0.0.0.0/0 ekle ve kümenin duraklatılmadığına bak.',
+    ADRES: 'Sunucu çalışıyor ama veritabanı adresi (MONGO_URL) hatalı görünüyor. Atlas\'tan yeniden kopyala.',
+    DIGER: 'Sunucu çalışıyor ama veritabanına bağlanamıyor. Render > Logs bölümüne bak.',
+  };
+  async function dbHint() {
+    try {
+      const r = await fetch('/healthz', { cache: 'no-store' });
+      const h = await r.json();
+      if (h && h.ok && !h.db && h.dbError) return DB_HINTS[h.dbError] || DB_HINTS.DIGER;
+    } catch (e) { /* sunucuya hiç ulaşılamıyor: aşağıdaki genel mesaj kalır */ }
+    return '';
+  }
+
   async function start() {
     const t0 = Date.now();
     let session = null;
+    let hint = '';
+    let lastHintAt = 0;
     // Render ücretsiz plan: sunucu uykudan uyanırken 30-60 sn sürebilir; nazikçe bekle
     for (;;) {
       try {
@@ -157,8 +176,12 @@
           setBootMsg(e.message);
           return;
         }
-        if (waited > 90000) {
-          setBootMsg('Sunucuya ulaşılamadı. İnternetini kontrol edip uygulamayı yeniden aç.');
+        if (waited > 3500 && Date.now() - lastHintAt > 6000) {
+          lastHintAt = Date.now();
+          hint = await dbHint();
+        }
+        if (waited > 120000) {
+          setBootMsg(hint || 'Sunucuya ulaşılamadı. İnternetini kontrol edip uygulamayı yeniden aç.');
           const b = document.createElement('button');
           b.className = 'btn primary';
           b.textContent = 'Tekrar dene';
@@ -167,7 +190,8 @@
           $('#boot').appendChild(b);
           return;
         }
-        if (waited > 3500) setBootMsg('Sunucu uyanıyor, birkaç saniye sürebilir…');
+        if (hint) setBootMsg(hint);
+        else if (waited > 3500) setBootMsg('Sunucu uyanıyor, birkaç saniye sürebilir…');
         await K.sleep(2500);
       }
     }
