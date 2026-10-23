@@ -57,8 +57,8 @@
     async (ctx) => {
       const v = ctx.view;
       let mode = 'login';
-      let needAdminCode = false;
       const banned = K.bannedMsg || '';
+      const inApp = /KlipoApp/.test(navigator.userAgent) || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
 
       function paint() {
         const reg = mode === 'register';
@@ -71,11 +71,11 @@
             <label class="field"><span>Kullanıcı adı</span><input class="input" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="24" required></label>
             ${reg ? '<label class="field"><span>Görünen ad</span><input class="input" name="nickname" maxlength="30" autocomplete="nickname" placeholder="İsteğe bağlı"></label>' : ''}
             <label class="field"><span>Şifre</span><input class="input" name="password" type="password" autocomplete="${reg ? 'new-password' : 'current-password'}" maxlength="72" required></label>
-            ${needAdminCode ? '<label class="field"><span>Yönetici kodu</span><input class="input" name="adminCode" type="password" autocomplete="off"></label>' : ''}
             <div class="error-text" id="aerr" role="alert"></div>
             <button class="btn primary block" type="submit" style="height:46px">${reg ? 'Hesap oluştur' : 'Giriş yap'}</button>
           </form>
-          <p class="hint center">Devam ederek topluluk kurallarını kabul etmiş olursun.</p></div>`;
+          <p class="hint center">Devam ederek topluluk kurallarını kabul etmiş olursun.</p>
+          ${inApp ? '' : '<p class="hint center"><a href="/indir.html" style="color:inherit;text-decoration:underline">Uygulamayı indir</a></p>'}</div>`;
         $('#af input', v).focus();
       }
       paint();
@@ -93,7 +93,6 @@
         const body = { username: f.username.value, password: f.password.value };
         if (mode === 'register') {
           body.nickname = f.nickname.value;
-          if (f.adminCode) body.adminCode = f.adminCode.value;
         }
         if (!body.username.trim() || !body.password) {
           err.textContent = 'Kullanıcı adı ve şifre gerekli.';
@@ -113,17 +112,6 @@
           setTimeout(K.announce, 600);
         } catch (ex) {
           err.textContent = ex.message;
-          if (ex.code === 'ADMIN_CODE' && !needAdminCode) {
-            needAdminCode = true;
-            const keep = { u: f.username.value, p: f.password.value, n: f.nickname ? f.nickname.value : '' };
-            paint();
-            const nf = $('#af', v);
-            nf.username.value = keep.u;
-            nf.password.value = keep.p;
-            if (nf.nickname) nf.nickname.value = keep.n;
-            $('#aerr', v).textContent = ex.message;
-            nf.adminCode.focus();
-          }
           btn.disabled = false;
         }
       });

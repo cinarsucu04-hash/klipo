@@ -1,5 +1,5 @@
 /* Klipo service worker: kabuğu (HTML/CSS/JS) çevrimdışı açar. API ve medya asla önbelleğe alınmaz. */
-const CACHE = 'klipo-shell-v1';
+const CACHE = 'klipo-shell-v2';
 const SHELL = ['/', '/css/app.css', '/js/theme.js', '/js/core.js', '/js/components.js', '/js/view-feed.js',
   '/js/view-explore.js', '/js/view-upload.js', '/js/view-inbox.js', '/js/view-profile.js', '/js/view-settings.js',
   '/js/view-admin.js', '/js/app.js', '/icons/icon-192.png', '/offline.html'];
@@ -19,6 +19,8 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(req.url);
   if (req.method !== 'GET' || url.origin !== location.origin) return;
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/media/') || url.pathname === '/healthz') return;
+  // Uygulama dışındaki sayfalar ve dosyalar (indir.html, Klipo.apk...) doğrudan ağdan gelir; '/' önbelleğini bozmasın
+  if (req.mode === 'navigate' && url.pathname !== '/') return;
 
   // ağ öncelikli: yeni sürümler hemen görünür, ağ yoksa önbellekten açılır
   e.respondWith(

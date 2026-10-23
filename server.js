@@ -182,7 +182,6 @@ async function connectWithRetry() {
     try {
       await db.connect();
       buildSession();
-      await ensureAdminNote();
       console.log('MongoDB bağlantısı hazır.');
       return;
     } catch (e) {
@@ -194,12 +193,6 @@ async function connectWithRetry() {
       }
       await sleep(Math.min(30000, 2000 * attempt));
     }
-  }
-}
-
-async function ensureAdminNote() {
-  if (!cfg.ADMIN_SETUP_CODE) {
-    console.warn('[uyarı] ADMIN_SETUP_CODE tanımlı değil: yönetici hesabı oluşturulamaz. Render ortam değişkenlerine ekleyin.');
   }
 }
 

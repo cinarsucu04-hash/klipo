@@ -16,16 +16,15 @@ Sonsuz kaydırmalı Sana Özel / Takip / Yeni akışları · video yükleme (ile
 | Değişken | Açıklama |
 |---|---|
 | `MONGO_URL` | Atlas bağlantı adresi (zorunlu) |
-| `ADMIN_SETUP_CODE` | Yönetici hesabı açarken girilecek gizli kod (zorunlu, kendin belirle) |
 | `SESSION_SECRET` | Render otomatik üretir; elle verirsen en az 32 karakter olsun |
-| `ADMIN_USERNAMES` | Yönetici olabilecek kullanıcı adları, virgülle (varsayılan `admin`) |
+| `ADMIN_USERNAMES` | Yönetici olacak kullanıcı adları, virgülle (varsayılan `admin`). Bu adla **ilk kaydolan** yönetici olur |
 | `DB_NAME` | Veritabanı adı (varsayılan `klipo`) |
 | `STORAGE` | `gridfs` (varsayılan, dosyalar MongoDB'de) veya `disk` (Render kalıcı disk bağlıysa) |
 | `MAX_VIDEO_MB` / `MAX_IMAGE_MB` | Yükleme sınırları (60 / 8) |
 | `KEEP_ALIVE` | `0` yaparsan kendi kendine ping atmayı kapatır |
 
 4. Dağıtım bitince `https://ADIN.onrender.com/healthz` adresi `{"ok":true,"db":true,…}` döndürmeli.
-5. **Yönetici hesabı:** uygulamada *Kayıt ol* → kullanıcı adı `admin` → açılan kutuya `ADMIN_SETUP_CODE` değerini gir. Sonra *Ayarlar → Yönetim paneli*.
+5. **Yönetici hesabı:** siteyi açar açmaz *Kayıt ol* → kullanıcı adı `admin` (kendi şifrenle). Ek kod istenmez; bu adla ilk kaydolan kişi yönetici olur, bu yüzden bunu **linki kimseye vermeden önce** yap. Sonra *Ayarlar → Yönetim paneli*.
 
 **Bilmen gerekenler**
 - Render ücretsiz planı 15 dk hareketsizlikte uyur; ilk açılış 30–60 sn sürebilir. Sunucu portu hemen açar ve veritabanına arka planda bağlanır; bu sürede "başlatılıyor" cevabı verir.
@@ -58,10 +57,16 @@ Android SDK ve Gradle indirmeleri bu geliştirme ortamından erişilebilir deği
 
 **Telefona kurulum:** APK'yı indirip aç, "bilinmeyen kaynaklardan yüklemeye izin ver" uyarısını onayla.
 
-**Google Play'e yüklemek istersen**
-- Kendi imza anahtarını üret ve depo *Secrets* bölümüne `KEYSTORE_BASE64` (anahtar dosyasının base64'ü), `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` olarak ekle; iş akışı bunları otomatik kullanır. Anahtar yoksa APK "debug" anahtarıyla imzalanır: telefona kurulur ama Play'e yüklenemez. Anahtarı kaybetme, güncellemeler aynı anahtarla yapılmalıdır.
-- Play, `.aab` ister ve kullanıcı içeriği olan uygulamalarda şikâyet/engelleme araçları, gizlilik politikası ve içerik denetimi ister (bunların uygulama içi karşılığı var; gizlilik politikası metnini senin yazman gerekir). Yalnızca web sitesini saran uygulamalar "asgari işlevsellik" gerekçesiyle reddedilebilir; bu bir risk olarak kalır.
-- Uygulama adı/paket adı: **Klipo** / `app.klipo.mobile` (`android/app/build.gradle`'dan değiştirilebilir).
+**Play Store olmadan dağıtım (ücretsiz)**
+1. İş akışından çıkan `Klipo.apk` dosyasını depodaki `public/` klasörüne yükle (GitHub: `public` klasörüne gir → *Add file → Upload files*).
+2. Render yeniden kurulunca `https://ADIN.onrender.com/indir.html` sayfası hazırdır: Android için indirme düğmesi, iPhone için "Ana Ekrana Ekle" anlatımı içerir. Linki WhatsApp, Instagram biyografisi vb. yerlerde paylaş. Giriş ekranında da "Uygulamayı indir" bağlantısı görünür.
+3. Web arayüzü sunucudan geldiği için sunucu/arayüz güncellemelerinde APK'yı yeniden dağıtmana gerek yoktur. APK yalnızca uygulama adresi veya Android kodu değişirse yenilenir.
+
+**Google Play'e yüklemek istersen (şu an yapılmadı)**
+- Play Console hesabı tek seferlik ücretlidir (kayıt ekranında güncel tutar yazar). Kişisel hesaplarda yayına çıkmadan önce **en az 12 test kullanıcısının 14 gün kesintisiz** kapalı testte kalması gerekir.
+- Play, 31 Ağustos 2026'dan beri yeni uygulamaların **Android 16 (API 36)** hedeflemesini ister. Bu proje şu an API 34'e göre ayarlıdır; Play'e gitmeden önce `android/` klasörü güncellenmelidir (Android Gradle eklentisi 8.13 + Gradle 8.13 + ekrandan ekrana çizim düzenlemesi).
+- Yüklenecek `.aab` dosyası **release anahtarıyla** imzalanmalıdır; debug anahtarı Play'de reddedilir. Anahtarı sakla, kaybolursa güncelleme çıkaramazsın.
+- Gizlilik politikası adresi, veri güvenliği formu, içerik derecelendirmesi ve hesap silme bilgisi gerekir. Yalnızca siteyi saran uygulamalar "asgari işlevsellik" gerekçesiyle reddedilebilir; bu bir risk olarak kalır.
 
 ## 4) Klasör yapısı
 
@@ -78,7 +83,7 @@ scripts/             check.js (denetim), make-icons.py (ikon üretimi)
 
 ## 5) Güvenlik özeti
 
-Oturum çerezi `httpOnly` + `sameSite=lax` (+ HTTPS'te `secure`), tüm yazma isteklerinde CSRF belirteci, giriş/kayıt/yükleme için hız sınırları, helmet CSP (satır içi betik yok), yükleme dosyalarının içerik imzasıyla doğrulanması, özel/engelli/gizli içerik için `/media` erişim denetimi, yönetici hesabının yalnızca gizli kodla açılması, askıya alınan hesapların oturumunun düşürülmesi.
+Oturum çerezi `httpOnly` + `sameSite=lax` (+ HTTPS'te `secure`), tüm yazma isteklerinde CSRF belirteci, giriş/kayıt/yükleme için hız sınırları, helmet CSP (satır içi betik yok), yükleme dosyalarının içerik imzasıyla doğrulanması, özel/engelli/gizli içerik için `/media` erişim denetimi, yönetici adının ilk kaydolan kişiye verilmesi (bu adı sen hemen al), askıya alınan hesapların oturumunun düşürülmesi.
 
 ## 6) Doğrulama durumu (dürüst not)
 

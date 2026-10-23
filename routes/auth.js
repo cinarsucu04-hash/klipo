@@ -3,7 +3,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const cfg = require('../lib/config');
 const { cols } = require('../lib/db');
-const { HttpError, wrap, clean, safeEqual } = require('../lib/helpers');
+const { HttpError, wrap, clean } = require('../lib/helpers');
 const { isValidUsername, RESERVED_USERNAMES, REPORT_REASONS } = require('../lib/text');
 const { presentMe, getSettings } = require('../lib/services');
 const { ensureCsrf, authLimiter, requireAuth } = require('../lib/middleware');
@@ -63,10 +63,8 @@ router.post(
 
     let role = 'user';
     if (cfg.ADMIN_USERNAMES.includes(username)) {
-      // Yönetici adları herkese açık değildir: kurulum kodu gerekir
-      if (!cfg.ADMIN_SETUP_CODE || !body.adminCode || !safeEqual(body.adminCode, cfg.ADMIN_SETUP_CODE)) {
-        throw new HttpError(403, 'Bu kullanıcı adı yönetici için ayrılmış. Yönetici kodunu gir.', 'ADMIN_CODE');
-      }
+      // ADMIN_USERNAMES listesindeki ad, ilk kaydolan kişiye yönetici yetkisiyle verilir (başka kod istenmez).
+      // Ad alındıktan sonra kimse aynı adla kayıt olamaz; bu yüzden yönetici hesabını ilk iş sen aç.
       role = 'admin';
     } else if (RESERVED_USERNAMES.has(username)) {
       throw new HttpError(400, 'Bu kullanıcı adı kullanılamaz.');
