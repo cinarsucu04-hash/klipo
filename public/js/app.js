@@ -47,8 +47,27 @@
   /* ---------------- bakım ekranı ---------------- */
   K.showMaintenance = (msg) => {
     $('#app').classList.add('no-nav');
-    $('#view').innerHTML = `<div class="maint"><div class="col" style="align-items:center">${icon('refresh', 'lg')}<h2>Kısa bir ara verdik</h2><p class="muted">${esc(msg || 'Platform bakımda. Lütfen daha sonra tekrar dene.')}</p><button class="btn primary" id="m-retry">Tekrar dene</button></div></div>`;
+    $('#view').innerHTML = `<div class="maint"><div class="col" style="align-items:center;width:100%;max-width:320px">${icon('refresh', 'lg')}<h2>Kısa bir ara verdik</h2><p class="muted">${esc(msg || 'Platform bakımda. Lütfen daha sonra tekrar dene.')}</p><button class="btn primary" id="m-retry">Tekrar dene</button>
+      <button class="btn ghost sm" id="m-admin" style="margin-top:14px">Yönetici girişi</button>
+      <form id="m-form" class="col hidden" style="width:100%;margin-top:10px" novalidate>
+        <input class="input" name="username" placeholder="Kullanıcı adı" autocomplete="username" autocapitalize="none">
+        <input class="input" name="password" type="password" placeholder="Şifre" autocomplete="current-password">
+        <div class="error-text" id="m-err" role="alert"></div>
+        <button class="btn primary block" type="submit">Giriş yap</button></form></div></div>`;
     $('#m-retry').onclick = () => location.reload();
+    $('#m-admin').onclick = () => $('#m-form').classList.toggle('hidden');
+    $('#m-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      try {
+        const r = await K.api('/auth/login', { method: 'POST', body: { username: f.username.value, password: f.password.value } });
+        if (r.user && r.user.role === 'admin') return location.reload();
+        await K.api('/auth/logout', { method: 'POST' }).catch(() => {});
+        $('#m-err').textContent = 'Bakım sürerken yalnızca yöneticiler girebilir.';
+      } catch (err) {
+        $('#m-err').textContent = err.message;
+      }
+    };
   };
 
   /* ---------------- giriş / kayıt ---------------- */
