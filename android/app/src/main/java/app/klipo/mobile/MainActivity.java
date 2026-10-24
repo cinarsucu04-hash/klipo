@@ -1,17 +1,21 @@
 package app.klipo.mobile;
 
+import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.DownloadManager;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.provider.MediaStore;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.CookieManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.RenderProcessGoneDetail;
 import android.webkit.URLUtil;
 import android.webkit.ValueCallback;
@@ -27,6 +31,7 @@ import androidx.activity.OnBackPressedCallback;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 
 /**
  * Klipo Android sarmalayıcısı: Render üzerindeki web uygulamasını tam ekran WebView içinde açar.
@@ -36,7 +41,11 @@ public class MainActivity extends AppCompatActivity {
 
     private static final String BG = "#0A0A0F";
 
+    /** Arka plan işçisi, uygulama açıkken bildirim göstermesin diye. */
+    static volatile boolean visible = false;
+
     private WebView webView;
+    private ActivityResultLauncher<String> notifPermLauncher;
     private ValueCallback<Uri[]> filePathCallback;
     private ActivityResultLauncher<Intent> fileChooserLauncher;
     private String baseHost;
@@ -56,6 +65,11 @@ public class MainActivity extends AppCompatActivity {
                     filePathCallback.onReceiveValue(uris);
                     filePathCallback = null;
                 });
+
+        // Bildirim izni sonucu (Android 13+)
+        notifPermLauncher = registerForActivityResult(new ActivityResultContracts.RequestPermission(), granted -> {
+            if (granted) Notifier.enable(getApplicationContext());
+        });
 
         webView = new WebView(this);
         webView.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -103,6 +117,8 @@ public class MainActivity extends AppCompatActivity {
                 return true;
             }
         });
+
+        webView.addJavascriptInterface(new NativeBridge(), "KlipoNative");
 
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
@@ -162,7 +178,43 @@ public class MainActivity extends AppCompatActivity {
             String start = BuildConfig.BASE_URL;
             Uri deep = deepLink(getIntent());
             if (deep != null) start = deep.toString();
+            String path = notifyPath(getIntent());
+            if (path != null) start = BuildConfig.BASE_URL + path;
             webView.loadUrl(start);
+        }
+
+        if (Notifier.enabled(this)) Notifier.schedule(this);
+    }
+
+    /** Bildirime dokununca açılacak uygulama içi yol (yalnızca "/" ile başlayanlar). */
+    private String notifyPath(Intent intent) {
+        if (intent == null) return null;
+        String p = intent.getStringExtra("path");
+        return (p != null && p.startsWith("/") && !p.startsWith("//")) ? p : null;
+    }
+
+    /** Web arayüzünün çağırdığı küçük köprü: yalnızca bildirim ayarları. */
+    private class NativeBridge {
+        @JavascriptInterface
+        public void enableNotifications() {
+            runOnUiThread(() -> {
+                if (Build.VERSION.SDK_INT >= 33
+                        && ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                    notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS);
+                } else {
+                    Notifier.enable(getApplicationContext());
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void disableNotifications() {
+            Notifier.disable(getApplicationContext());
+        }
+
+        @JavascriptInterface
+        public boolean notificationsEnabled() {
+            return Notifier.enabled(getApplicationContext());
         }
     }
 
@@ -171,7 +223,10 @@ public class MainActivity extends AppCompatActivity {
         super.onNewIntent(intent);
         setIntent(intent);
         Uri deep = deepLink(intent);
-        if (deep != null && webView != null) webView.loadUrl(deep.toString());
+        String path = notifyPath(intent);
+        if (webView == null) return;
+        if (path != null) webView.loadUrl(BuildConfig.BASE_URL + path);
+        else if (deep != null) webView.loadUrl(deep.toString());
     }
 
     /** Yalnızca kendi alan adımıza ait https bağlantılarını kabul eder. */
@@ -211,6 +266,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onPause() {
         super.onPause();
+        visible = false;
         CookieManager.getInstance().flush();
         if (webView != null) webView.onPause(); // arka planda video/ses çalmasın
     }
@@ -218,6 +274,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        visible = true;
         if (webView != null) webView.onResume();
     }
 

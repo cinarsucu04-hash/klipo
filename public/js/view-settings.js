@@ -34,6 +34,8 @@
           ${row('showLikes', 'heart', 'Beğendiklerim herkese açık')}
           ${row('restrictedMode', 'shield', 'Kısıtlı mod', 'Hassas olarak işaretlenen videoları gizler')}
           <button class="menu-item" data-msgs>${icon('inbox')}<span>Bana kimler mesaj atabilir?</span><span class="end">${MSG_LABEL[m.settings.allowMessages]}</span></button>
+          <div class="section-title">Bildirimler</div>
+          <div class="menu-item" data-push>${icon('bell')}<span class="grow">Anlık bildirimler<span class="hint" style="display:block" id="push-sub">Kontrol ediliyor…</span></span><button class="switch" id="push-sw" aria-label="Anlık bildirimler" role="switch"></button></div>
           <div class="section-title">Görünüm</div>
           <button class="menu-item" data-theme>${icon('sun')}<span>Tema</span><span class="end">${THEME_LABEL[m.settings.theme] || 'Koyu'}</span></button>
           <div class="section-title">Etkinlik</div>
@@ -49,6 +51,25 @@
       }
       paint();
       bindBack(v, '/me');
+      K.push.status().then((s) => {
+        const sw = $('#push-sw', v);
+        if (!sw) return;
+        sw.classList.toggle('on', s.on);
+        $('#push-sub', v).textContent = s.text;
+      });
+      K.on(v, 'click', '[data-push]', async () => {
+        const sw = $('#push-sw', v);
+        const turnOn = !sw.classList.contains('on');
+        try {
+          if (turnOn) await K.push.enable(true);
+          else await K.push.disable();
+        } catch (e) {
+          K.toast(e.message || 'Bildirim ayarı değiştirilemedi', 'error');
+        }
+        const s = await K.push.status();
+        sw.classList.toggle('on', s.on);
+        $('#push-sub', v).textContent = s.text;
+      });
 
       K.on(v, 'click', '[data-sw]', async (row) => {
         const key = row.dataset.sw;

@@ -12,6 +12,7 @@
     const vis = VIS_LABEL[v.visibility];
     return `<section class="reel" data-id="${esc(v.id)}" data-i="${i}">
       <video playsinline loop webkit-playsinline preload="none" ${v.posterUrl ? `poster="${esc(v.posterUrl)}"` : ''} ${K.muted ? 'muted' : ''}></video>
+      ${K.fx.layerHTML(v.overlays)}
       <div class="shade"></div><div class="tap" data-tap></div>
       <div class="pause-ind">${icon('play')}</div>
       <button class="sound-hint" data-act="sound">${icon('mute', 'sm')} Sesi açmak için dokun</button>
@@ -42,7 +43,7 @@
    * opts.empty     → boş durum HTML'i
    */
   K.createFeed = function (root, opts) {
-    const st = { items: [], page: 0, hasMore: true, loading: false, active: -1, viewed: new Set(), dead: false, userPaused: false };
+    const st = { items: [], page: 0, hasMore: true, loading: false, active: -1, viewed: new Set(), dead: false, userPaused: false, sfx: null };
     root.innerHTML = '<div class="feed" tabindex="-1"></div>';
     const feed = root.firstElementChild;
     let io;
@@ -97,8 +98,15 @@
       st.active = index;
       st.userPaused = false;
       const vid = $('video', reel);
+      // önceki videonun müziğini kapat, bu videonunkini aç
+      if (st.sfx) {
+        st.sfx.destroy();
+        st.sfx = null;
+      }
       vid.muted = K.muted;
       vid.currentTime = 0;
+      const item = itemOf(reel.dataset.id);
+      if (item && item.sound && item.sound.url) st.sfx = K.fx.sound(vid, item.sound);
       const p = vid.play();
       reel.classList.add('playing');
       reel.classList.remove('paused');
@@ -396,6 +404,7 @@
       destroy() {
         st.dead = true;
         clearTimeout(viewTimer);
+        if (st.sfx) st.sfx.destroy();
         io && io.disconnect();
         document.removeEventListener('keydown', onKey);
         document.removeEventListener('visibilitychange', onVis);

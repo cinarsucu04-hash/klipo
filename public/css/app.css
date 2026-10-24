@@ -343,3 +343,28 @@ textarea.input { resize: none; min-height: 84px; }
 .announce span { flex: 1; }
 
 @media (prefers-reduced-motion: reduce) { * { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
+
+/* ---------- yazı katmanı (akış + düzenleyici) ---------- */
+.ov-layer { position: absolute; inset: 0; pointer-events: none; overflow: hidden; container-type: inline-size; z-index: 1; }
+.ov { position: absolute; transform: translate(-50%, -50%); max-width: 86%; text-align: center; font-weight: 800; line-height: 1.2; white-space: pre-wrap; overflow-wrap: anywhere; text-shadow: 0 2px 8px rgba(0,0,0,.55); font-size: 6.4cqw; }
+.ov.has-bg { text-shadow: none; padding: .18em .5em; border-radius: .4em; }
+
+/* ---------- düzenleyici ---------- */
+.editor { position: relative; border-radius: var(--radius); overflow: hidden; background: #000; aspect-ratio: 9 / 16; width: min(100%, calc(60vh * 9 / 16)); margin: 0 auto; flex: none; }
+.editor video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.editor .ov { pointer-events: auto; touch-action: none; cursor: grab; }
+.editor .mute-btn { position: absolute; top: 8px; right: 8px; z-index: 2; width: 36px; height: 36px; border-radius: 50%; background: rgba(0,0,0,.55); color: #fff; display: grid; place-items: center; }
+.tools { display: flex; gap: 8px; justify-content: center; }
+.sound-card { display: flex; flex-direction: column; gap: 10px; }
+.slide { display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--muted); }
+.slide span { width: 92px; flex: none; }
+.slide input[type=range] { flex: 1; accent-color: var(--brand); }
+.swatches { display: flex; gap: 12px; flex-wrap: wrap; }
+.swatch { width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--line); }
+.swatch.active { outline: 2px solid var(--brand); outline-offset: 2px; }
+.snd { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-bottom: 1px solid var(--line); }
+.snd.sel { background: color-mix(in srgb, var(--brand) 12%, transparent); border-radius: 10px; }
+.snd .play { flex: none; width: 40px; height: 40px; border-radius: 50%; background: var(--bg3); display: grid; place-items: center; }
+.snd .play .pause { display: block; width: 12px; height: 14px; border-left: 4px solid currentColor; border-right: 4px solid currentColor; box-sizing: border-box; }
+.snd .meta { flex: 1; min-width: 0; text-align: left; display: flex; flex-direction: column; }
+.ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }

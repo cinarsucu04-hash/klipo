@@ -129,6 +129,8 @@
           K.refreshCounters && K.refreshCounters();
           K.go('/', true);
           setTimeout(K.announce, 600);
+          K.push.sync();
+          setTimeout(K.push.prompt, 6000);
         } catch (ex) {
           err.textContent = ex.message;
           btn.disabled = false;
@@ -217,6 +219,8 @@
       if (K.me) {
         K.refreshCounters && K.refreshCounters();
         announce();
+        K.push.sync();
+        setTimeout(K.push.prompt, 6000);
       }
     }
 

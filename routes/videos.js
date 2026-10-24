@@ -9,6 +9,7 @@ const {
 const storage = require('../lib/storage');
 const { uploadLimiter } = require('../lib/middleware');
 const { purgeVideo, purgeComment } = require('../lib/purge');
+const { parseOverlays, resolveSound } = require('../lib/sounds');
 
 const router = express.Router();
 const commentsRouter = express.Router();
@@ -117,6 +118,9 @@ router.post(
     let visibility = VISIBILITIES.includes(body.visibility) ? body.visibility : 'public';
     if (req.user.isPrivate && visibility === 'public') visibility = 'followers';
 
+    const overlays = parseOverlays(body.overlays);
+    const sound = await resolveSound(body.soundId, body.musicVol, body.origVol);
+
     const savedVideo = await storage.save(vf, 'video', 'video');
     let posterUrl = '';
     const pf = req.files.poster && req.files.poster[0];
@@ -135,7 +139,9 @@ router.post(
       mediaUrl: savedVideo.url,
       posterUrl,
       duration: Math.min(3600, Math.max(0, Number(body.duration) || 0)),
-      song: clean(body.song, 60) || 'Orijinal ses - ' + (req.user.nickname || req.user.username),
+      song: clean(body.song, 60) || (sound && sound.name) || 'Orijinal ses - ' + (req.user.nickname || req.user.username),
+      sound,
+      overlays,
       visibility,
       ownerPrivate: !!req.user.isPrivate,
       allowComments: bool(body.allowComments, true),

@@ -37,6 +37,7 @@ router.get(
       config: {
         appName: cfg.APP_NAME,
         maxVideoMB: cfg.MAX_VIDEO_MB,
+        maxAudioMB: cfg.MAX_AUDIO_MB,
         maxImageMB: cfg.MAX_IMAGE_MB,
         reportReasons: REPORT_REASONS,
         announcement: settings.announcement ? settings.announcement.text : '',

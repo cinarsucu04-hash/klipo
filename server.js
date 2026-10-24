@@ -11,6 +11,7 @@ const db = require('./lib/db');
 const storage = require('./lib/storage');
 const { HttpError, wrap, sleep } = require('./lib/helpers');
 const mw = require('./lib/middleware');
+const push = require('./lib/push');
 
 let sessionMw = null; // oturum ara katmanı DB bağlanınca kurulur
 const app = express();
@@ -126,6 +127,8 @@ const videoRoutes = require('./routes/videos');
 api.use('/videos', videoRoutes.videos);
 api.use('/comments', videoRoutes.comments);
 api.use('/stories', require('./routes/stories'));
+api.use('/sounds', require('./routes/sounds'));
+api.use('/push', require('./routes/push'));
 api.use('/users', require('./routes/users'));
 api.use('/me', require('./routes/me'));
 api.use('/chats', require('./routes/chats'));
@@ -182,6 +185,7 @@ async function connectWithRetry() {
     try {
       await db.connect();
       buildSession();
+      await push.init().catch((e) => console.error('[push] başlatılamadı (bildirimler kapalı):', e.message));
       console.log('MongoDB bağlantısı hazır.');
       return;
     } catch (e) {

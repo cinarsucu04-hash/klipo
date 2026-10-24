@@ -3,7 +3,7 @@
 Kısa video paylaşım uygulaması (TikTok benzeri, farklı isim ve marka). Tek bir Node.js sunucusu hem API'yi hem de web arayüzünü (PWA) sunar. Aynı arayüz, `android/` klasöründeki sarmalayıcı ile APK olarak da paketlenir.
 
 **Neler var?**
-Sonsuz kaydırmalı Sana Özel / Takip / Yeni akışları · video yükleme (ilerleme çubuğu, kapak görseli) · beğeni, kaydet, paylaş · yorum, yanıt, yorum beğenisi, sabitleme · hashtag ve @bahsetme · 24 saatlik hikâyeler (görüntüleyenler, yanıt → mesaj) · birebir ve grup mesajlaşma (görsel, "görüldü", video kartları) · bildirimler · özel hesap ve takip istekleri · engelleme / şikâyet · arama, keşfet, trend etiketler · profil ziyaretçileri, izleme geçmişi, sabitlenmiş videolar · kısıtlı mod, açık/koyu tema · yönetici paneli (istatistik, şikâyetler, kullanıcılar, videolar, duyuru, bakım modu, yedek, günlük) · PWA (ana ekrana ekle, çevrimdışı sayfa).
+Sonsuz kaydırmalı Sana Özel / Takip / Yeni akışları · video yükleme (ilerleme çubuğu, kapak görseli) · beğeni, kaydet, paylaş · yorum, yanıt, yorum beğenisi, sabitleme · hashtag ve @bahsetme · 24 saatlik hikâyeler (görüntüleyenler, yanıt → mesaj) · birebir ve grup mesajlaşma (görsel, "görüldü", video kartları) · bildirimler · özel hesap ve takip istekleri · engelleme / şikâyet · arama, keşfet, trend etiketler · profil ziyaretçileri, izleme geçmişi, sabitlenmiş videolar · kısıtlı mod, açık/koyu tema · yönetici paneli (istatistik, şikâyetler, kullanıcılar, videolar, duyuru, bakım modu, yedek, günlük) · PWA (ana ekrana ekle, çevrimdışı sayfa) · **video düzenleyici**: videoya yazı ekleme (renk, boyut, arka plan, sürükleyerek konumlandırma) ve müzik ekleme (hazır 5 telifsiz ses + kendi yüklediğin ses, ses seviyesi ayarı) · **anlık bildirimler** (izin penceresi, beğeni/yorum/takipçi/mesaj).
 
 ---
 
@@ -21,6 +21,8 @@ Sonsuz kaydırmalı Sana Özel / Takip / Yeni akışları · video yükleme (ile
 | `DB_NAME` | Veritabanı adı (varsayılan `klipo`) |
 | `STORAGE` | `gridfs` (varsayılan, dosyalar MongoDB'de) veya `disk` (Render kalıcı disk bağlıysa) |
 | `MAX_VIDEO_MB` / `MAX_IMAGE_MB` | Yükleme sınırları (60 / 8) |
+| `MAX_AUDIO_MB` | Yüklenen müzik sınırı (8) |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | İsteğe bağlı; verilmezse anahtarlar otomatik üretilip veritabanına kaydedilir |
 | `KEEP_ALIVE` | `0` yaparsan kendi kendine ping atmayı kapatır |
 
 4. Dağıtım bitince `https://ADIN.onrender.com/healthz` adresi `{"ok":true,"db":true,…}` döndürmeli.
@@ -67,6 +69,13 @@ Android SDK ve Gradle indirmeleri bu geliştirme ortamından erişilebilir deği
 - Play, 31 Ağustos 2026'dan beri yeni uygulamaların **Android 16 (API 36)** hedeflemesini ister. Bu proje şu an API 34'e göre ayarlıdır; Play'e gitmeden önce `android/` klasörü güncellenmelidir (Android Gradle eklentisi 8.13 + Gradle 8.13 + ekrandan ekrana çizim düzenlemesi).
 - Yüklenecek `.aab` dosyası **release anahtarıyla** imzalanmalıdır; debug anahtarı Play'de reddedilir. Anahtarı sakla, kaybolursa güncelleme çıkaramazsın.
 - Gizlilik politikası adresi, veri güvenliği formu, içerik derecelendirmesi ve hesap silme bilgisi gerekir. Yalnızca siteyi saran uygulamalar "asgari işlevsellik" gerekçesiyle reddedilebilir; bu bir risk olarak kalır.
+
+## Düzenleyici ve bildirimler (bilmen gerekenler)
+
+- Yazı ve müzik videonun dosyasına **işlenmez**; yüklenen video olduğu gibi saklanır, yazı/müzik oynatırken Klipo içinde üstüne bindirilir. Bu yüzden indirilen/başka yerde paylaşılan videoda yazı ve müzik görünmez. Kendi yüklediğin müziğin telif sorumluluğu sana aittir.
+- iPhone'da videonun kendi ses seviyesi ayarı çalışmaz (iOS izin vermez).
+- Web bildirimleri tarayıcıda ve Ana Ekrana eklenen PWA'da çalışır; iPhone'da yalnızca Ana Ekrana ekledikten sonra. **APK içindeki WebView Web Push desteklemez**; APK'da bildirimler yerel olarak ~15 dakikada bir kontrol edilir (gecikmeli gelir). Bunun için APK'yı yeniden derleyip yeniden kurmak gerekir.
+- Bu bildirim ve Android kodu gerçek servislerle/derlemeyle denenmedi.
 
 ## 4) Klasör yapısı
 
