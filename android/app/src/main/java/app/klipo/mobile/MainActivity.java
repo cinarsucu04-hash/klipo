@@ -172,7 +172,10 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        if (savedInstanceState != null) {
+        String handoff = handoffUrl(getIntent());
+        if (handoff != null) {
+            webView.loadUrl(handoff);
+        } else if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState);
         } else {
             String start = BuildConfig.BASE_URL;
@@ -184,6 +187,16 @@ public class MainActivity extends AppCompatActivity {
         }
 
         if (Notifier.enabled(this)) Notifier.schedule(this);
+    }
+
+    /** klipo://auth?code=… (Google girişi dönüşü) → sunucunun tek kullanımlık giriş adresi. Kod biçimi doğrulanır. */
+    private String handoffUrl(Intent intent) {
+        if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction())) return null;
+        Uri data = intent.getData();
+        if (data == null || !"klipo".equals(data.getScheme()) || !"auth".equals(data.getHost())) return null;
+        String code = data.getQueryParameter("code");
+        if (code == null || !code.matches("[a-f0-9]{48}")) return null;
+        return BuildConfig.BASE_URL + "/api/auth/handoff?code=" + code;
     }
 
     /** Bildirime dokununca açılacak uygulama içi yol (yalnızca "/" ile başlayanlar). */
@@ -207,6 +220,24 @@ public class MainActivity extends AppCompatActivity {
             });
         }
 
+        /** Google girişi gibi işlemler için kendi adresimizi sistem tarayıcısında açar (WebView'de Google girişi engellenir). */
+        @JavascriptInterface
+        public void openBrowser(String url) {
+            try {
+                Uri u = Uri.parse(url);
+                if (!"https".equalsIgnoreCase(u.getScheme()) || u.getHost() == null || !u.getHost().equalsIgnoreCase(baseHost)) return;
+                runOnUiThread(() -> {
+                    try {
+                        startActivity(new Intent(Intent.ACTION_VIEW, u));
+                    } catch (ActivityNotFoundException ignored) {
+                        // tarayıcı yok
+                    }
+                });
+            } catch (Exception ignored) {
+                // geçersiz adres
+            }
+        }
+
         @JavascriptInterface
         public void disableNotifications() {
             Notifier.disable(getApplicationContext());
@@ -224,8 +255,10 @@ public class MainActivity extends AppCompatActivity {
         setIntent(intent);
         Uri deep = deepLink(intent);
         String path = notifyPath(intent);
+        String handoff = handoffUrl(intent);
         if (webView == null) return;
-        if (path != null) webView.loadUrl(BuildConfig.BASE_URL + path);
+        if (handoff != null) webView.loadUrl(handoff);
+        else if (path != null) webView.loadUrl(BuildConfig.BASE_URL + path);
         else if (deep != null) webView.loadUrl(deep.toString());
     }
 

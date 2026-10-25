@@ -5,6 +5,7 @@ const { HttpError, wrap, oid, clean, bool, pageParams } = require('../lib/helper
 const { isHttpUrl } = require('../lib/text');
 const { sid, userCard, usersById, presentMe, hydrateVideos, notify } = require('../lib/services');
 const storage = require('../lib/storage');
+const moderation = require('../lib/moderation');
 
 const router = express.Router();
 
@@ -20,9 +21,14 @@ router.patch(
     if (body.nickname !== undefined) {
       const nick = clean(body.nickname, 30);
       if (!nick) throw new HttpError(400, 'Görünen ad boş olamaz.');
+      await moderation.enforce(req, nick, 'görünen ad');
       set.nickname = nick;
     }
-    if (body.bio !== undefined) set.bio = clean(body.bio, 200);
+    if (body.bio !== undefined) {
+      set.bio = clean(body.bio, 200);
+      await moderation.enforce(req, set.bio, 'biyografi');
+    }
+    if (body.accountType !== undefined) set.accountType = body.accountType === 'rp' ? 'rp' : 'real';
     if (body.link !== undefined) {
       const link = clean(body.link, 200);
       if (link && !isHttpUrl(link)) throw new HttpError(400, 'Bağlantı http:// veya https:// ile başlamalı.');

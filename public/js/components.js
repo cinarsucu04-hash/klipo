@@ -592,6 +592,17 @@
     const items = [
       { icon: 'link', label: 'Bağlantıyı kopyala', run: async () => ((await K.copy(K.videoLink(video.id))) ? K.toast('Bağlantı kopyalandı', 'ok') : 0) },
     ];
+    if (ctx.onSpeed) {
+      items.push({
+        icon: 'play',
+        label: `Oynatma hızı (${K.speed || 1}x)`,
+        run: () => K.menu('Oynatma hızı', [0.5, 0.75, 1, 1.25, 1.5, 2].map((s) => ({
+          icon: 'play',
+          label: s === 1 ? 'Normal (1x)' : `${s}x`,
+          run: () => { ctx.onSpeed(s); K.toast(`Hız ${s}x`); },
+        }))),
+      });
+    }
     if (video.mine) {
       items.push(
         { icon: 'edit', label: 'Düzenle', run: () => K.editVideo(video, ctx.onUpdate) },
@@ -611,6 +622,21 @@
         }
       );
     } else {
+      if (ctx.onHide) {
+        items.push({
+          icon: 'eye-off',
+          label: 'İlgilenmiyorum',
+          run: async () => {
+            try {
+              await K.api(`/videos/${video.id}/hide`, { method: 'POST' });
+              K.toast('Bunun gibi videoları daha az göstereceğiz', 'ok');
+              ctx.onHide();
+            } catch (e) {
+              K.fail(e);
+            }
+          },
+        });
+      }
       items.push({ icon: 'flag', label: 'Şikayet et', run: () => K.report('video', video.id, 'Bu videoyu neden şikayet ediyorsun?') });
       items.push({ icon: 'ban', label: `@${video.user.username} kişisini engelle`, danger: true, run: () => K.blockUser(video.user, ctx.onRemove) });
     }

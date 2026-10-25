@@ -3,7 +3,7 @@
 Kısa video paylaşım uygulaması (TikTok benzeri, farklı isim ve marka). Tek bir Node.js sunucusu hem API'yi hem de web arayüzünü (PWA) sunar. Aynı arayüz, `android/` klasöründeki sarmalayıcı ile APK olarak da paketlenir.
 
 **Neler var?**
-Sonsuz kaydırmalı Sana Özel / Takip / Yeni akışları · video yükleme (ilerleme çubuğu, kapak görseli) · beğeni, kaydet, paylaş · yorum, yanıt, yorum beğenisi, sabitleme · hashtag ve @bahsetme · 24 saatlik hikâyeler (görüntüleyenler, yanıt → mesaj) · birebir ve grup mesajlaşma (görsel, "görüldü", video kartları) · bildirimler · özel hesap ve takip istekleri · engelleme / şikâyet · arama, keşfet, trend etiketler · profil ziyaretçileri, izleme geçmişi, sabitlenmiş videolar · kısıtlı mod, açık/koyu tema · yönetici paneli (istatistik, şikâyetler, kullanıcılar, videolar, duyuru, bakım modu, yedek, günlük) · PWA (ana ekrana ekle, çevrimdışı sayfa) · **video düzenleyici**: videoya yazı ekleme (renk, boyut, arka plan, sürükleyerek konumlandırma) ve müzik ekleme (hazır 5 telifsiz ses + kendi yüklediğin ses, ses seviyesi ayarı) · **anlık bildirimler** (izin penceresi, beğeni/yorum/takipçi/mesaj).
+Sonsuz kaydırmalı Sana Özel / Takip / Yeni akışları · video yükleme (ilerleme çubuğu, kapak görseli) · beğeni, kaydet, paylaş · yorum, yanıt, yorum beğenisi, sabitleme · hashtag ve @bahsetme · 24 saatlik hikâyeler (görüntüleyenler, yanıt → mesaj) · birebir ve grup mesajlaşma (görsel, "görüldü", video kartları) · bildirimler · özel hesap ve takip istekleri · engelleme / şikâyet · arama, keşfet, trend etiketler · profil ziyaretçileri, izleme geçmişi, sabitlenmiş videolar · kısıtlı mod, açık/koyu tema · yönetici paneli (istatistik, şikâyetler, kullanıcılar, videolar, duyuru, bakım modu, yedek, günlük) · PWA (ana ekrana ekle, çevrimdışı sayfa) · **video düzenleyici**: videoya yazı ekleme (renk, boyut, arka plan, sürükleyerek konumlandırma) ve müzik ekleme (hazır 5 telifsiz ses + kendi yüklediğin ses, ses seviyesi ayarı) · **ses sayfası** (müziğe dokun → o sesi kullanan videolar, "Bu sesi kullan") · **İlgilenmiyorum** · **oynatma hızı** (0.5x–2x) · **anlık bildirimler** (izin penceresi, beğeni/yorum/takipçi/mesaj).
 
 ---
 
@@ -23,6 +23,8 @@ Sonsuz kaydırmalı Sana Özel / Takip / Yeni akışları · video yükleme (ile
 | `MAX_VIDEO_MB` / `MAX_IMAGE_MB` | Yükleme sınırları (60 / 8) |
 | `MAX_AUDIO_MB` | Yüklenen müzik sınırı (8) |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | İsteğe bağlı; verilmezse anahtarlar otomatik üretilip veritabanına kaydedilir |
+| `MAX_ACCOUNTS_PER_IP` | Aynı ağdan açılabilecek hesap sayısı (3). Yönetim panelinden de değiştirilir |
+| `GOOGLE_CLIENT_ID` | İsteğe bağlı: "Google ile devam et" için (aşağıya bak) |
 | `KEEP_ALIVE` | `0` yaparsan kendi kendine ping atmayı kapatır |
 
 4. Dağıtım bitince `https://ADIN.onrender.com/healthz` adresi `{"ok":true,"db":true,…}` döndürmeli.
@@ -77,6 +79,15 @@ Android SDK ve Gradle indirmeleri bu geliştirme ortamından erişilebilir deği
 - Web bildirimleri tarayıcıda ve Ana Ekrana eklenen PWA'da çalışır; iPhone'da yalnızca Ana Ekrana ekledikten sonra. **APK içindeki WebView Web Push desteklemez**; APK'da bildirimler yerel olarak ~15 dakikada bir kontrol edilir (gecikmeli gelir). Bunun için APK'yı yeniden derleyip yeniden kurmak gerekir.
 - Bu bildirim ve Android kodu gerçek servislerle/derlemeyle denenmedi.
 
+## Güvenlik özellikleri
+
+- **Küfür / tehdit filtresi:** yorum, video açıklaması, videoya eklenen yazılar, mesajlar, hikâye açıklaması, biyografi, görünen ad, kullanıcı adı ve ses adlarında çalışır. Türkçe ve İngilizce küfürleri, harf aralı (s.i.k) ve rakamlı (s1k) yazımları yakalar; "şikayet", "sıkışık", "götürdü" gibi masum kelimelere takılmaz. Yorumlarda telefon/IBAN paylaşımı ve yeni hesapların (ilk 24 saat) bağlantı eklemesi de engellenir. 24 saatte yeterince ihlal toplayan hesap otomatik geçici askıya alınır (1 saat → 1 gün → 7 gün → 30 gün). Yönetici panelinde *Güvenlik* sekmesinden özel yasaklı kelime ekleyebilir ve takılanları görebilirsin. **Videonun görüntüsü/sesi taranmaz**; bunun için şikayet sistemi vardır: aynı videoyu 5 farklı kişi şikayet ederse video yönetici bakana kadar otomatik gizlenir.
+- **Ağ başına hesap sınırı:** aynı IP'den en fazla 3 hesap açılabilir (IPv6'da /64 ağı tek sayılır). IP adresleri düz yazı olarak değil, geri döndürülemez özet olarak saklanır; panelde yalnızca son 5 hanesi görünür. **Dikkat:** aynı Wi-Fi'yi paylaşan aile/okul ya da mobil operatörlerin ortak IP'sini kullananlar bu sınıra takılabilir; çok şikayet gelirse *Güvenlik* sekmesinden sayıyı artır.
+- **Hesap türü:** kayıtta ve Ayarlar'da *Gerçek hesap* / *RP hesabı* seçilir; RP hesapların profilinde etiket görünür.
+- **Banlar:** yönetici *Kullanıcılar* sekmesinden 1/7/30 gün ya da süresiz askıya alabilir; istersen aynı anda kişinin IP'sini de yasaklar (siteye giremez, yeni hesap açamaz). IP yasakları *Güvenlik* sekmesinde kullanıcı adı ya da elle IP ile eklenir/kaldırılır. Yöneticiler ve kendi IP'n yasaklanamaz. Süreli askı dolunca hesap kendiliğinden açılır.
+- **Giriş güvenliği:** 5 hatalı şifreden sonra hesap 15 dakika kilitlenir; yeni şifreler en az 8 karakter, harf+rakam olmalı ve yaygın şifreler reddedilir; şifre değişince diğer cihazlardaki oturumlar kapanır; *Ayarlar → Tüm cihazlardan çıkış yap*.
+- **Google ile devam et (isteğe bağlı):** [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → *OAuth istemci kimliği* → tür *Web uygulaması*; *Yetkili JavaScript kaynakları*na Render adresini (`https://ADIN.onrender.com`) ekle; çıkan **İstemci Kimliği**ni Render'da `GOOGLE_CLIENT_ID` olarak gir. Ayarlanmazsa düğme görünmez. Google'dan açılan hesap otomatik kullanıcı adı alır, ilk girişte kendi adını seçer. Android uygulamasında (Google, gömülü tarayıcıdan girişe izin vermediği için) giriş sistem tarayıcısında yapılır ve uygulamaya otomatik döner; bunun için APK'nın yeniden derlenmesi gerekir.
+
 ## 4) Klasör yapısı
 
 ```
@@ -96,6 +107,6 @@ Oturum çerezi `httpOnly` + `sameSite=lax` (+ HTTPS'te `secure`), tüm yazma ist
 
 ## 6) Doğrulama durumu (dürüst not)
 
-- Arayüz, gerçek tarayıcıda (headless Chromium) sunucuyu taklit eden bir test sunucusuyla uçtan uca denendi: 45/45 kontrol geçti (giriş/kayıt, akış, çift dokunuşla beğeni, yorum, hikâye, mesajlaşma, yükleme, ayarlar, yönetici paneli, CSRF yenileme, bakım modu…).
+- Arayüz, gerçek tarayıcıda (headless Chromium) sunucuyu taklit eden bir test sunucusuyla uçtan uca denendi: 73/73 kontrol geçti (giriş/kayıt, akış, çift dokunuşla beğeni, yorum, hikâye, mesajlaşma, yükleme, ayarlar, yönetici paneli, CSRF yenileme, bakım modu…).
 - Sunucu kodu bu ortamda **gerçek MongoDB ile çalıştırılmadı** (paket indirme engelliydi); sözdizimi, içe/dışa aktarma tutarlılığı ve elle inceleme ile denetlendi. İlk Render dağıtımında günlüklere (Logs) bakmanı ve `/healthz` ile bir kayıt/giriş/yükleme denemesi yapmanı öneririm.
 - Android projesi derlenmedi (yukarıya bakın); ilk derlemede küçük bir Gradle/AGP uyarısı çıkarsa iş akışı günlüğü nedenini gösterir.

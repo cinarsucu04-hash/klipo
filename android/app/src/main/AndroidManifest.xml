@@ -36,6 +36,14 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="${klipoHost}" />
             </intent-filter>
+
+            <!-- Google girişinden sonra sistem tarayıcısı uygulamaya bu bağlantıyla döner -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="klipo" android:host="auth" />
+            </intent-filter>
         </activity>
     </application>
 </manifest>

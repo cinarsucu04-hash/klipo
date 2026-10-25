@@ -4,6 +4,7 @@ const { cols } = require('../lib/db');
 const { HttpError, wrap, oid, clean, escapeRegex, pageParams } = require('../lib/helpers');
 const { sid, usersById } = require('../lib/services');
 const storage = require('../lib/storage');
+const moderation = require('../lib/moderation');
 const { uploadLimiter } = require('../lib/middleware');
 const { BUILTIN } = require('../lib/sounds');
 
@@ -46,6 +47,7 @@ router.post(
     const body = req.body || {};
     const base = String(req.file.originalname || '').replace(/\.[^.]+$/, '');
     const name = clean(body.name, 60) || clean(base, 60) || 'Ses';
+    await moderation.enforce(req, name, 'ses adı');
     const saved = await storage.save(req.file, 'audio', 'public');
     const doc = {
       userId: req.user._id,

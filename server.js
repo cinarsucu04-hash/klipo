@@ -11,6 +11,7 @@ const db = require('./lib/db');
 const storage = require('./lib/storage');
 const { HttpError, wrap, sleep } = require('./lib/helpers');
 const mw = require('./lib/middleware');
+const security = require('./lib/security');
 const push = require('./lib/push');
 
 let sessionMw = null; // oturum ara katmanı DB bağlanınca kurulur
@@ -25,11 +26,12 @@ app.use(
       useDefaults: true,
       directives: {
         'default-src': ["'self'"],
-        'script-src': ["'self'"],
-        'style-src': ["'self'", "'unsafe-inline'"],
+        'script-src': ["'self'"].concat(cfg.GOOGLE_CLIENT_ID ? ['https://accounts.google.com/gsi/client'] : []),
+        'style-src': ["'self'", "'unsafe-inline'"].concat(cfg.GOOGLE_CLIENT_ID ? ['https://accounts.google.com/gsi/style'] : []),
+        'frame-src': cfg.GOOGLE_CLIENT_ID ? ['https://accounts.google.com/gsi/'] : ["'none'"],
         'img-src': ["'self'", 'data:', 'blob:'],
         'media-src': ["'self'", 'blob:'],
-        'connect-src': ["'self'"],
+        'connect-src': ["'self'"].concat(cfg.GOOGLE_CLIENT_ID ? ['https://accounts.google.com/gsi/'] : []),
         'worker-src': ["'self'"],
         'manifest-src': ["'self'"],
         'frame-ancestors': ["'none'"],
@@ -37,6 +39,7 @@ app.use(
       },
     },
     crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' }, // Google giriş penceresi için
     crossOriginResourcePolicy: { policy: 'same-origin' },
   })
 );
@@ -117,7 +120,7 @@ app.get(
 const api = express.Router();
 api.use(express.json({ limit: '200kb' }));
 api.use(express.urlencoded({ extended: false, limit: '200kb' }));
-api.use(mw.noStore, mw.apiLimiter, sessionGate, wrap(mw.loadUser), mw.csrf, mw.writeLimiter);
+api.use(mw.noStore, mw.apiLimiter, sessionGate, wrap(mw.loadUser), wrap(security.ipGate), mw.csrf, mw.writeLimiter);
 
 api.use('/auth', require('./routes/auth'));
 api.use(wrap(mw.maintenance));

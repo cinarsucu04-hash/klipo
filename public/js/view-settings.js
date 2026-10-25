@@ -27,7 +27,10 @@
         const m = K.me;
         v.innerHTML = `${header('Ayarlar')}
           <div class="section-title">Hesap</div>
-          <button class="menu-item" data-pw>${icon('lock')}<span>Şifreyi değiştir</span></button>
+          ${m.noPassword ? '' : `<button class="menu-item" data-pw>${icon('lock')}<span>Şifreyi değiştir</span></button>`}
+          <button class="menu-item" data-acct>${icon('user')}<span>Hesap türü</span><span class="end">${m.acct === 'rp' ? 'RP hesabı' : 'Gerçek hesap'}</span></button>
+          ${K.google.enabled() && !K.google.native() && !m.google ? `<div class="menu-item" id="glink-row">${icon('link')}<span class="grow">Google hesabını bağla<span class="hint" style="display:block">Sonra Google ile de girebilirsin</span></span></div><div class="gslot" id="glink"></div>` : ''}
+          <button class="menu-item" data-logout-all>${icon('logout')}<span>Tüm cihazlardan çıkış yap</span></button>
           ${row('isPrivate', 'lock', 'Gizli hesap', 'Yalnızca onayladığın kişiler videolarını görür')}
           <div class="section-title">Gizlilik</div>
           ${row('hideVisitors', 'eye-off', 'Profil ziyaretlerimi gizle', 'Açıkken ziyaretçi listen de görünmez')}
@@ -48,6 +51,21 @@
           <button class="menu-item" data-logout>${icon('logout')}<span>Çıkış yap</span></button>
           <button class="menu-item danger" data-delete>${icon('trash')}<span>Hesabı kalıcı olarak sil</span></button>
           <p class="hint center" style="padding:22px 0 30px">${esc(K.config.appName)} · sürüm 1.0</p>`;
+        linkGoogle();
+      }
+      function linkGoogle() {
+        const gl = $('#glink', v);
+        if (!gl) return;
+        K.google.button(gl, async (credential) => {
+          try {
+            const r = await K.api('/auth/google-link', { method: 'POST', body: { credential } });
+            K.me = r.user;
+            K.toast('Google hesabın bağlandı', 'ok');
+            paint();
+          } catch (e) {
+            K.fail(e);
+          }
+        });
       }
       paint();
       bindBack(v, '/me');
@@ -116,15 +134,16 @@
         K.sheet({
           title: 'Şifreyi değiştir',
           html: `<div class="page col"><label class="field"><span>Mevcut şifre</span><input class="input" type="password" id="pw0" autocomplete="current-password"></label>
-            <label class="field"><span>Yeni şifre (en az 6 karakter)</span><input class="input" type="password" id="pw1" autocomplete="new-password"></label>
+            <label class="field"><span>Yeni şifre (en az 8 karakter, harf + rakam)</span><input class="input" type="password" id="pw1" autocomplete="new-password"></label>
             <button class="btn primary block" id="pw-go">Güncelle</button></div>`,
           onMount: (api) => {
             $('#pw-go', api.el).onclick = async (e) => {
               e.currentTarget.disabled = true;
               try {
-                await K.api('/auth/password', { method: 'POST', body: { current: $('#pw0', api.el).value, next: $('#pw1', api.el).value } });
+                const r = await K.api('/auth/password', { method: 'POST', body: { current: $('#pw0', api.el).value, next: $('#pw1', api.el).value } });
+                if (r.csrf) K.csrf = r.csrf;
                 api.close();
-                K.toast('Şifren güncellendi', 'ok');
+                K.toast('Şifren güncellendi; diğer cihazlardaki oturumlar kapandı', 'ok');
               } catch (err) {
                 K.fail(err);
                 e.currentTarget.disabled = false;
@@ -132,6 +151,31 @@
             };
           },
         });
+      });
+      K.on(v, 'click', '[data-acct]', () => {
+        K.menu('Hesap türü', [
+          { icon: 'user', label: 'Gerçek hesap', run: () => setAcct('real') },
+          { icon: 'star', label: 'RP hesabı (karakter / rol yapma)', run: () => setAcct('rp') },
+        ]);
+      });
+      async function setAcct(a) {
+        try {
+          const r = await K.api('/me', { method: 'PATCH', body: { accountType: a } });
+          K.me = r.user;
+          K.toast(a === 'rp' ? 'Hesabın RP olarak işaretlendi' : 'Hesabın gerçek hesap olarak işaretlendi', 'ok');
+          paint();
+        } catch (e) {
+          K.fail(e);
+        }
+      }
+      K.on(v, 'click', '[data-logout-all]', async () => {
+        if (!(await K.confirm({ title: 'Tüm cihazlardan çıkış yapılsın mı?', text: 'Bu cihaz dahil her yerde oturumun kapanır. Yeniden giriş yapman gerekir.', ok: 'Çıkış yap', danger: true }))) return;
+        try {
+          await K.api('/auth/logout-all', { method: 'POST' });
+        } catch (e) {}
+        await K.refreshSession().catch(() => {});
+        K.updateNav();
+        K.go('/login');
       });
       K.on(v, 'click', '[data-logout]', async () => {
         try {
@@ -143,7 +187,9 @@
       });
       K.on(v, 'click', '[data-delete]', async () => {
         if (!(await K.confirm({ title: 'Hesabın silinsin mi?', text: 'Tüm videoların, yorumların ve mesajların kalıcı olarak silinir. Bu işlem geri alınamaz.', ok: 'Devam et', danger: true }))) return;
-        const pw = await K.ask({ title: 'Şifreni gir', text: 'Silme işlemini onaylamak için şifren gerekli.', password: true, ok: 'Hesabı sil', danger: true });
+        const pw = K.me.noPassword
+          ? await K.ask({ title: 'Kullanıcı adını yaz', text: `Silme işlemini onaylamak için @${K.me.username} yaz.`, ok: 'Hesabı sil', danger: true })
+          : await K.ask({ title: 'Şifreni gir', text: 'Silme işlemini onaylamak için şifren gerekli.', password: true, ok: 'Hesabı sil', danger: true });
         if (!pw) return;
         try {
           await K.api('/auth/delete-account', { method: 'POST', body: { password: pw } });

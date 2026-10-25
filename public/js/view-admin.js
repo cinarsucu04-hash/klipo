@@ -4,7 +4,7 @@
   const K = window.K;
   const { esc, icon, $, $$ } = K;
 
-  const TABS = [['stats', 'Genel'], ['reports', 'Şikayetler'], ['users', 'Kullanıcılar'], ['videos', 'Videolar'], ['system', 'Sistem']];
+  const TABS = [['stats', 'Genel'], ['reports', 'Şikayetler'], ['users', 'Kullanıcılar'], ['videos', 'Videolar'], ['safety', 'Güvenlik'], ['system', 'Sistem']];
 
   K.route(
     '/admin',
@@ -23,7 +23,7 @@
         show();
       });
 
-      const views = { stats, reports, users, videos, system };
+      const views = { stats, reports, users, videos, safety, system };
       function show() {
         body.innerHTML = K.spinner();
         views[tab]().catch((e) => (body.innerHTML = K.empty('refresh', 'Yüklenemedi', e.message)));
@@ -108,7 +108,7 @@
           const d = await K.api(`/admin/users?q=${encodeURIComponent($('#uq', body).value)}${$('#ub', body).checked ? '&banned=1' : ''}`);
           if (!ctx.alive()) return;
           list.innerHTML = d.users.length
-            ? d.users.map((u) => `<div class="list-item" data-id="${esc(u.id)}"><a class="row grow" href="#/u/${esc(u.username)}" style="min-width:0">${K.avatar(u)}<span class="grow" style="min-width:0"><span class="title ellipsis" style="display:block">${K.nameHTML(u)} ${u.role === 'admin' ? '<span class="tag-pill">Yönetici</span>' : ''}${u.banned ? ' <span class="tag-pill red">Askıda</span>' : ''}</span><span class="sub ellipsis" style="display:block">@${esc(u.username)} · ${K.timeAgo(u.createdAt)}${u.banned && u.banReason ? ' · ' + esc(u.banReason) : ''}</span></span></a>
+            ? d.users.map((u) => `<div class="list-item" data-id="${esc(u.id)}"><a class="row grow" href="#/u/${esc(u.username)}" style="min-width:0">${K.avatar(u)}<span class="grow" style="min-width:0"><span class="title ellipsis" style="display:block">${K.nameHTML(u)} ${u.role === 'admin' ? '<span class="tag-pill">Yönetici</span>' : ''}${u.banned ? ` <span class="tag-pill red">${u.bannedUntil ? 'Geçici askıda' : 'Askıda'}</span>` : ''}${u.accountType === 'rp' ? ' <span class="tag-pill">RP</span>' : ''}${u.google ? ' <span class="tag-pill">Google</span>' : ''}</span><span class="sub ellipsis" style="display:block">@${esc(u.username)} · ${K.timeAgo(u.createdAt)}${u.banned && u.banReason ? ' · ' + esc(u.banReason) : ''}${u.bannedUntil ? ' · ' + new Date(u.bannedUntil).toLocaleString('tr-TR') + ' tarihine kadar' : ''}${u.ip ? ' · IP ' + esc(u.ip) : ''}</span></span></a>
                 ${u.role === 'admin' ? '' : `<button class="btn sm" data-verify>${u.verified ? 'Rozeti al' : 'Rozet'}</button>${u.banned ? '<button class="btn sm primary" data-unban>Aç</button>' : '<button class="btn sm danger" data-ban>Askıya al</button>'}`}</div>`).join('')
             : K.empty('users', 'Kullanıcı bulunamadı');
         }
@@ -120,10 +120,37 @@
         K.on(list, 'click', '[data-unban]', async (b) => {
           await K.api(`/admin/users/${b.closest('[data-id]').dataset.id}/unban`, { method: 'POST' }).then(() => (K.toast('Askı kaldırıldı', 'ok'), load())).catch(K.fail);
         });
-        K.on(list, 'click', '[data-ban]', async (b) => {
-          const reason = await K.ask({ title: 'Askıya alma nedeni', placeholder: 'Topluluk kurallarını ihlal', max: 200, ok: 'Askıya al', danger: true });
-          if (reason === null) return;
-          await K.api(`/admin/users/${b.closest('[data-id]').dataset.id}/ban`, { method: 'POST', body: { reason } }).then(() => (K.toast('Hesap askıya alındı', 'ok'), load())).catch(K.fail);
+        K.on(list, 'click', '[data-ban]', (b) => {
+          const id = b.closest('[data-id]').dataset.id;
+          let days = 0;
+          K.sheet({
+            title: 'Hesabı askıya al',
+            html: `<div class="page col">
+              <label class="field"><span>Neden?</span><input class="input" id="bn-r" maxlength="200" placeholder="Topluluk kurallarını ihlal"></label>
+              <div class="field"><span>Süre</span><div class="seg" id="bn-d" style="margin:0">
+                <button data-d="1">1 gün</button><button data-d="7">7 gün</button><button data-d="30">30 gün</button><button data-d="0" class="active">Süresiz</button></div>
+                <small class="hint">Süreli askıda videolar yerinde kalır, süre dolunca hesap kendiliğinden açılır. Süresiz askıda videolar gizlenir.</small></div>
+              <label class="row" style="gap:10px"><input type="checkbox" id="bn-ip"> <span>Bu kişinin IP adresini de yasakla<br><small class="hint">Aynı ağdan yeni hesap açamaz, siteye giremez. Ortak Wi-Fi / mobil ağda masum kişileri de etkileyebilir.</small></span></label>
+              <button class="btn danger block" id="bn-go">Askıya al</button></div>`,
+            onMount: (api) => {
+              K.on(api.el, 'click', '#bn-d [data-d]', (x) => {
+                days = Number(x.dataset.d);
+                $$('#bn-d [data-d]', api.el).forEach((y) => y.classList.toggle('active', y === x));
+              });
+              $('#bn-go', api.el).onclick = async (e) => {
+                e.currentTarget.disabled = true;
+                try {
+                  await K.api(`/admin/users/${id}/ban`, { method: 'POST', body: { reason: $('#bn-r', api.el).value, days, ip: $('#bn-ip', api.el).checked } });
+                  api.close();
+                  K.toast('Hesap askıya alındı', 'ok');
+                  load();
+                } catch (err) {
+                  K.fail(err);
+                  e.currentTarget.disabled = false;
+                }
+              };
+            },
+          });
         });
         await load();
       }
@@ -152,6 +179,38 @@
           await K.api(`/videos/${idOf(b)}`, { method: 'DELETE' }).then(() => (K.toast('Video silindi', 'ok'), load())).catch(K.fail);
         });
         await load();
+      }
+
+      /* ---- güvenlik ---- */
+      async function safety() {
+        const [ib, ml, sc] = await Promise.all([K.api('/admin/ip-bans'), K.api('/admin/modlog'), K.api('/admin/security')]);
+        if (!ctx.alive()) return;
+        const KIND = { kufur: 'Küfür', tehdit: 'Tehdit', bilgi: 'Kişisel bilgi', baglanti: 'Bağlantı' };
+        body.innerHTML = `
+          <div class="card"><b>Ağ başına hesap sınırı</b><p class="hint" style="margin:4px 0 10px">Aynı IP / ağdan en fazla bu kadar hesap açılabilir (varsayılan ${sc.defaultMaxPerIp}). Ortak Wi-Fi veya mobil operatör ağlarında birçok kişi aynı IP'yi paylaşabilir; çok kişiyi engellerse artır.</p>
+            <div class="row"><input class="input" id="sc-max" type="number" min="0" max="50" value="${sc.maxPerIp || ''}" placeholder="${sc.defaultMaxPerIp}"><button class="btn primary sm" id="sc-save">Kaydet</button></div></div>
+          <div class="card"><b>Özel yasaklı kelimeler</b><p class="hint" style="margin:4px 0 10px">Yerleşik küfür/tehdit listesine ek olarak; virgülle ya da satır satır yaz.</p>
+            <textarea class="input" id="sc-words" rows="3" maxlength="3000" placeholder="kelime1, kelime2">${esc((sc.badWords || []).join(', '))}</textarea>
+            <button class="btn primary sm" id="sc-words-save" style="margin-top:8px">Listeyi kaydet</button></div>
+          <div class="section-title">IP yasakları (${ib.bans.length})</div>
+          <div class="card"><div class="row" style="flex-wrap:wrap;gap:8px"><input class="input grow" id="ip-u" placeholder="Kullanıcı adı (son IP'si yasaklanır)" maxlength="30"><input class="input" id="ip-d" type="number" min="0" max="3650" placeholder="Gün (boş = süresiz)" style="max-width:150px"></div>
+            <input class="input" id="ip-r" placeholder="Neden (isteğe bağlı)" maxlength="120" style="margin-top:8px">
+            <button class="btn danger sm" id="ip-add" style="margin-top:8px">IP yasağı ekle</button></div>
+          ${ib.bans.length ? ib.bans.map((x) => `<div class="list-item" data-id="${esc(x.id)}"><span class="grow"><span class="title" style="font-size:14px">IP ${esc(x.ip)}${x.username ? ' · @' + esc(x.username) : ''}</span><span class="sub" style="display:block">${esc(x.reason || '—')} · ${x.until ? new Date(x.until).toLocaleString('tr-TR') + ' tarihine kadar' : 'süresiz'}</span></span><button class="btn sm" data-ipdel>Kaldır</button></div>`).join('') : '<p class="hint center" style="padding:10px">Yasaklı IP yok.</p>'}
+          <div class="section-title">Filtreye takılanlar (son 100)</div>
+          ${ml.items.length ? ml.items.map((x) => `<div class="list-item"><span class="grow"><span class="title" style="font-size:14px">${x.user ? '@' + esc(x.user.username) : 'silinmiş hesap'} · ${esc(KIND[x.kind] || x.kind)} · ${esc(x.where)}</span><span class="sub" style="display:block">${esc(x.snippet)} · ${K.timeAgo(x.createdAt)}</span></span></div>`).join('') : '<p class="hint center" style="padding:10px">Henüz engellenen içerik yok.</p>'}`;
+        $('#sc-save', body).onclick = () => K.api('/admin/security', { method: 'POST', body: { maxPerIp: $('#sc-max', body).value } }).then(() => K.toast('Kaydedildi', 'ok')).catch(K.fail);
+        $('#sc-words-save', body).onclick = () => K.api('/admin/security', { method: 'POST', body: { badWords: $('#sc-words', body).value } }).then(() => K.toast('Liste kaydedildi', 'ok')).catch(K.fail);
+        $('#ip-add', body).onclick = () =>
+          K.api('/admin/ip-bans', { method: 'POST', body: { username: $('#ip-u', body).value, days: $('#ip-d', body).value, reason: $('#ip-r', body).value } })
+            .then(() => (K.toast('IP yasağı eklendi', 'ok'), safety()))
+            .catch(K.fail);
+        if (!body._ipdel) {
+          body._ipdel = true; // yetki devri tek kez bağlanır (safety() yeniden çağrılabilir)
+          K.on(body, 'click', '[data-ipdel]', (b) =>
+            K.api(`/admin/ip-bans/${b.closest('[data-id]').dataset.id}`, { method: 'DELETE' }).then(() => (K.toast('Yasak kaldırıldı', 'ok'), safety())).catch(K.fail)
+          );
+        }
       }
 
       /* ---- sistem ---- */

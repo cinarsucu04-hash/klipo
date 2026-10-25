@@ -4,6 +4,7 @@ const { cols } = require('../lib/db');
 const { HttpError, wrap, oid, clean } = require('../lib/helpers');
 const { sid, userCard, usersById, blockedIds, isBlockedEitherWay } = require('../lib/services');
 const storage = require('../lib/storage');
+const moderation = require('../lib/moderation');
 const { findOrCreateDm, assertCanMessage, postMessage, presentMessage } = require('../lib/chats');
 
 const router = express.Router();
@@ -91,6 +92,7 @@ router.post(
     const me = req.user;
     const body = req.body || {};
     const name = clean(body.name, 40) || 'Yeni grup';
+    await moderation.enforce(req, name, 'grup adı');
     const rawList = Array.isArray(body.members) ? body.members : String(body.members || '').split(',');
     const names = [...new Set(rawList.map((m) => clean(m, 30).toLowerCase().replace(/^@/, '')).filter(Boolean))]
       .filter((n) => n !== me.username)
@@ -206,6 +208,7 @@ router.post(
     const chat = await loadChat(req);
     const text = clean((req.body || {}).text, 1000);
     if (!text && !req.file) throw new HttpError(400, 'Mesaj boş olamaz.');
+    await moderation.enforce(req, text, 'mesaj');
 
     if (chat.type === 'dm') {
       const otherId = chat.members.find((m) => sid(m) !== sid(me._id));
@@ -240,6 +243,7 @@ router.patch(
     if (!isAdmin(chat, req.user._id)) throw new HttpError(403, 'Yalnızca yöneticiler grubu düzenleyebilir.');
     const name = clean((req.body || {}).name, 40);
     if (!name) throw new HttpError(400, 'Grup adı boş olamaz.');
+    await moderation.enforce(req, name, 'grup adı');
     await cols.chats.updateOne({ _id: chat._id }, { $set: { name } });
     await system(chat, `${req.user.nickname || req.user.username} grup adını "${name}" yaptı.`);
     res.json({ ok: true, name });

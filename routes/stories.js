@@ -4,6 +4,7 @@ const { cols } = require('../lib/db');
 const { HttpError, wrap, oid, clean } = require('../lib/helpers');
 const { sid, userCard, usersById, blockedIds, isBlockedEitherWay } = require('../lib/services');
 const storage = require('../lib/storage');
+const moderation = require('../lib/moderation');
 const { uploadLimiter } = require('../lib/middleware');
 const { purgeStory } = require('../lib/purge');
 const { findOrCreateDm, postMessage } = require('../lib/chats');
@@ -91,12 +92,14 @@ router.post(
   storage.uploadStory,
   wrap(async (req, res) => {
     if (!req.file) throw new HttpError(400, 'Bir fotoğraf veya video seç.');
+    const caption = clean((req.body || {}).caption, 120);
+    await moderation.enforce(req, caption, 'hikaye');
     const saved = await storage.save(req.file, 'media');
     const doc = {
       userId: req.user._id,
       mediaUrl: saved.url,
       mediaType: saved.isVideo ? 'video' : 'image',
-      caption: clean((req.body || {}).caption, 120),
+      caption: caption,
       views: 0,
       createdAt: new Date(),
     };
@@ -157,6 +160,7 @@ router.post(
     await assertCanSee(s, req.user);
     const text = clean((req.body || {}).text, 500);
     if (!text) throw new HttpError(400, 'Mesaj boş olamaz.');
+    await moderation.enforce(req, text, 'mesaj');
     const owner = await cols.users.findOne({ _id: s.userId, banned: { $ne: true } });
     if (!owner) throw new HttpError(404, 'Kullanıcı bulunamadı.');
     const chat = await findOrCreateDm(req.user, owner);

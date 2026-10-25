@@ -44,7 +44,7 @@
             ${isMe ? `<a class="icon-btn" href="#/settings" aria-label="Ayarlar">${icon('sliders')}</a>` : `<button class="icon-btn" data-more aria-label="Daha fazla">${icon('more')}</button>`}</div></div>
           <div class="profile-head">${avatar}
             <div class="profile-name">${K.nameHTML(u)}${u.isPrivate ? `<span style="margin-left:6px;color:var(--muted)">${icon('lock', 'sm')}</span>` : ''}</div>
-            <div class="profile-user">@${esc(u.username)}${rel.followsMe && !isMe ? ' · <span class="tag-pill">Seni takip ediyor</span>' : ''}</div>
+            <div class="profile-user">@${esc(u.username)}${u.acct === 'rp' ? ' · <span class="tag-pill">RP hesabı</span>' : ''}${rel.followsMe && !isMe ? ' · <span class="tag-pill">Seni takip ediyor</span>' : ''}</div>
             <div class="stats">
               <button data-list="following"><b data-s="following">${K.count(stats.following)}</b><span>Takip</span></button>
               <button data-list="followers"><b data-s="followers">${K.count(stats.followers)}</b><span>Takipçi</span></button>

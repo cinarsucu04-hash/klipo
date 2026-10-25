@@ -7,17 +7,42 @@ const {
   sid, userCard, usersById, logAdmin, getSettings, updateSettings,
 } = require('../lib/services');
 const { purgeVideo, purgeComment } = require('../lib/purge');
+const security = require('../lib/security');
 
 const router = express.Router();
 
-async function banUser(admin, userId, reason) {
-  const u = await cols.users.findOne({ _id: userId }, { projection: { role: 1, username: 1 } });
+// days: 0/boş = süresiz. opts.ip → kullanıcının IP özetleri de yasaklanır. opts.selfHash → yöneticinin kendi IP'si korunur
+async function banUser(admin, userId, reason, opts) {
+  opts = opts || {};
+  const u = await cols.users.findOne({ _id: userId }, { projection: { role: 1, username: 1, lastIpHash: 1, regIpHash: 1 } });
   if (!u) throw new HttpError(404, 'Kullanıcı bulunamadı.');
   if (u.role === 'admin') throw new HttpError(400, 'Yönetici hesapları askıya alınamaz.');
-  await cols.users.updateOne({ _id: userId }, { $set: { banned: true, banReason: clean(reason, 200), bannedAt: new Date() } });
-  // içerikleri akışlardan gizle (geri alınabilir)
-  await cols.videos.updateMany({ userId }, { $set: { removed: true } });
-  await logAdmin(admin, 'Kullanıcı askıya alındı', `@${u.username}: ${clean(reason, 200)}`);
+  const until = opts.days > 0 ? new Date(Date.now() + opts.days * 86400000) : null;
+  const upd = { $set: { banned: true, banReason: clean(reason, 200), bannedAt: new Date() } };
+  if (until) upd.$set.bannedUntil = until;
+  else upd.$unset = { bannedUntil: '' };
+  await cols.users.updateOne({ _id: userId }, upd);
+  // süresiz askıda içerikler akışlardan gizlenir (geri alınabilir); geçici askıda içerik kalır
+  if (!until) await cols.videos.updateMany({ userId }, { $set: { removed: true } });
+  let ipCount = 0;
+  if (opts.ip) {
+    const hashes = [...new Set([u.lastIpHash, u.regIpHash].filter(Boolean))].filter((h) => h !== opts.selfHash);
+    for (const h of hashes) {
+      await cols.ipBans.updateOne(
+        { ipHash: h },
+        { $set: { reason: clean(reason, 120), until, userId, username: u.username, by: admin._id, createdAt: new Date() } },
+        { upsert: true }
+      );
+      ipCount++;
+    }
+    security.forgetIp();
+  }
+  await security.killSessions(userId);
+  await logAdmin(
+    admin,
+    'Kullanıcı askıya alındı',
+    `@${u.username}: ${clean(reason, 200)} · ${until ? opts.days + ' gün' : 'süresiz'}${opts.ip ? ' · IP yasağı (' + ipCount + ')' : ''}`
+  );
   return u;
 }
 
@@ -145,9 +170,13 @@ router.post(
         throw new HttpError(400, 'Kullanıcı şikayetlerinde içerik silinemez; hesabı askıya alabilirsin.');
       }
     } else if (action === 'ban_user') {
-      await banUser(req.user, report.targetUserId, note || report.reason);
+      await banUser(req.user, report.targetUserId, note || report.reason, { selfHash: security.ipHashOf(req) });
     }
 
+    if (action === 'dismiss' && report.type === 'video') {
+      // otomatik gizlenmişse (çok şikayet) şikayet reddedilince geri aç
+      await cols.videos.updateOne({ _id: report.targetId, autoRemoved: true }, { $set: { removed: false }, $unset: { autoRemoved: '' } });
+    }
     await cols.reports.updateMany(
       { type: report.type, targetId: report.targetId, status: 'open' },
       { $set: { status: 'resolved', action, note, resolvedBy: req.user._id, resolvedAt: new Date() } }
@@ -182,6 +211,11 @@ router.get(
         role: u.role || 'user',
         banned: !!u.banned,
         banReason: u.banReason || '',
+        bannedUntil: u.bannedUntil || null,
+        accountType: u.accountType === 'rp' ? 'rp' : 'real',
+        google: !!u.googleId,
+        autoBans: u.autoBanCount || 0,
+        ip: security.maskIp(u.lastIpHash || u.regIpHash),
         createdAt: u.createdAt,
         lastActive: u.lastActive,
       })),
@@ -194,7 +228,9 @@ router.post(
   wrap(async (req, res) => {
     const id = oid(req.params.id);
     if (sid(id) === sid(req.user._id)) throw new HttpError(400, 'Kendini askıya alamazsın.');
-    await banUser(req.user, id, (req.body || {}).reason || 'Topluluk kurallarını ihlal');
+    const b = req.body || {};
+    const days = Math.min(3650, Math.max(0, Math.floor(Number(b.days) || 0)));
+    await banUser(req.user, id, b.reason || 'Topluluk kurallarını ihlal', { days, ip: bool(b.ip, false), selfHash: security.ipHashOf(req) });
     res.json({ ok: true });
   })
 );
@@ -205,8 +241,10 @@ router.post(
     const id = oid(req.params.id);
     const u = await cols.users.findOne({ _id: id }, { projection: { username: 1 } });
     if (!u) throw new HttpError(404, 'Kullanıcı bulunamadı.');
-    await cols.users.updateOne({ _id: id }, { $set: { banned: false, banReason: '' } });
+    await cols.users.updateOne({ _id: id }, { $set: { banned: false, banReason: '' }, $unset: { bannedUntil: '', lockUntil: '' } });
     await cols.videos.updateMany({ userId: id }, { $set: { removed: false } });
+    await cols.ipBans.deleteMany({ userId: id });
+    security.forgetIp();
     await logAdmin(req.user, 'Askı kaldırıldı', `@${u.username}`);
     res.json({ ok: true });
   })
@@ -336,6 +374,114 @@ router.get(
   wrap(async (req, res) => {
     const rows = await cols.logs.find({}).sort({ createdAt: -1 }).limit(100).toArray();
     res.json({ logs: rows.map((l) => ({ id: sid(l._id), admin: l.adminName, action: l.action, details: l.details, createdAt: l.createdAt })) });
+  })
+);
+
+
+// ---------------------------------------------------------------- IP YASAKLARI
+router.get(
+  '/ip-bans',
+  wrap(async (req, res) => {
+    const rows = await cols.ipBans.find({}).sort({ createdAt: -1 }).limit(200).toArray();
+    res.json({
+      bans: rows.map((b) => ({
+        id: sid(b._id),
+        ip: security.maskIp(b.ipHash),
+        username: b.username || '',
+        reason: b.reason || '',
+        until: b.until || null,
+        createdAt: b.createdAt,
+      })),
+    });
+  })
+);
+
+// Kullanıcı adıyla (son IP'si) ya da elle yazılan IP ile
+router.post(
+  '/ip-bans',
+  wrap(async (req, res) => {
+    const b = req.body || {};
+    const days = Math.min(3650, Math.max(0, Math.floor(Number(b.days) || 0)));
+    const until = days > 0 ? new Date(Date.now() + days * 86400000) : null;
+    const reason = clean(b.reason, 120) || 'Topluluk kurallarını ihlal';
+    let hashes = [];
+    let username = '';
+    if (b.ip) {
+      const ip = clean(b.ip, 60);
+      if (!/^[0-9a-fA-F:.]{3,45}$/.test(ip)) throw new HttpError(400, 'Geçerli bir IP adresi yaz.');
+      hashes = [security.hashIp(ip)];
+    } else if (b.username) {
+      const u = await cols.users.findOne({ username: clean(b.username, 30).toLowerCase().replace(/^@/, '') }, { projection: { lastIpHash: 1, regIpHash: 1, username: 1, role: 1 } });
+      if (!u) throw new HttpError(404, 'Kullanıcı bulunamadı.');
+      if (u.role === 'admin') throw new HttpError(400, 'Yöneticinin IP adresi yasaklanamaz.');
+      username = u.username;
+      hashes = [...new Set([u.lastIpHash, u.regIpHash].filter(Boolean))];
+      if (!hashes.length) throw new HttpError(400, 'Bu kullanıcının kayıtlı bir IP adresi yok (eski hesap).');
+    } else {
+      throw new HttpError(400, 'Kullanıcı adı veya IP adresi yaz.');
+    }
+    const self = security.ipHashOf(req);
+    hashes = hashes.filter((h) => h !== self);
+    if (!hashes.length) throw new HttpError(400, 'Kendi IP adresini yasaklayamazsın.');
+    for (const h of hashes) {
+      await cols.ipBans.updateOne({ ipHash: h }, { $set: { reason, until, username, by: req.user._id, createdAt: new Date() } }, { upsert: true });
+    }
+    security.forgetIp();
+    await logAdmin(req.user, 'IP yasağı', `${username ? '@' + username : 'elle girilen IP'} · ${until ? days + ' gün' : 'süresiz'} · ${reason}`);
+    res.json({ ok: true, count: hashes.length });
+  })
+);
+
+router.delete(
+  '/ip-bans/:id',
+  wrap(async (req, res) => {
+    const r = await cols.ipBans.deleteOne({ _id: oid(req.params.id) });
+    security.forgetIp();
+    if (r.deletedCount) await logAdmin(req.user, 'IP yasağı kaldırıldı', req.params.id);
+    res.json({ ok: true });
+  })
+);
+
+// ---------------------------------------------------------------- İÇERİK GÜVENLİĞİ
+router.get(
+  '/modlog',
+  wrap(async (req, res) => {
+    const rows = await cols.modLog.find({}).sort({ createdAt: -1 }).limit(100).toArray();
+    const users = await usersById(rows.map((r) => r.userId));
+    res.json({
+      items: rows.map((r) => ({
+        id: sid(r._id),
+        kind: r.kind,
+        where: r.where,
+        snippet: r.snippet,
+        createdAt: r.createdAt,
+        user: userCard(users.get(sid(r.userId))),
+      })),
+    });
+  })
+);
+
+router.get(
+  '/security',
+  wrap(async (req, res) => {
+    const s = await getSettings(true);
+    res.json({ maxPerIp: s.maxPerIp || 0, defaultMaxPerIp: require('../lib/config').MAX_ACCOUNTS_PER_IP, badWords: s.badWords || [] });
+  })
+);
+
+router.post(
+  '/security',
+  wrap(async (req, res) => {
+    const b = req.body || {};
+    const patch = {};
+    if (b.maxPerIp !== undefined) patch.maxPerIp = Math.min(50, Math.max(0, Math.floor(Number(b.maxPerIp) || 0)));
+    if (b.badWords !== undefined) {
+      const list = Array.isArray(b.badWords) ? b.badWords : String(b.badWords).split(/[\n,]+/);
+      patch.badWords = [...new Set(list.map((w) => clean(w, 30).toLowerCase()).filter((w) => w.length >= 3))].slice(0, 200);
+    }
+    const s = await updateSettings(patch);
+    await logAdmin(req.user, 'Güvenlik ayarları', `ağ başına hesap: ${s.maxPerIp || 'varsayılan'} · özel kelime: ${(s.badWords || []).length}`);
+    res.json({ maxPerIp: s.maxPerIp || 0, badWords: s.badWords || [] });
   })
 );
 

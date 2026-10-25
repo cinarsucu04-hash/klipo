@@ -5,6 +5,7 @@
   const { esc, icon, $, $$ } = K;
 
   K.muted = K.store.get('muted', '0') === '1';
+  K.speed = Number(K.store.get('speed', '1')) || 1;
 
   const VIS_LABEL = { followers: ['users', 'Yalnızca takipçiler'], private: ['lock', 'Yalnızca ben'] };
 
@@ -20,7 +21,7 @@
         ${vis && v.mine ? `<span class="vis-tag">${icon(vis[0], 'sm')} ${vis[1]}</span>` : ''}
         <a class="who" href="#/u/${esc(v.user.username)}">@${esc(v.user.username)}${v.user.verified ? K.verifiedBadge() : ''}<span style="font-weight:400;opacity:.8;font-size:13px">· ${K.timeAgo(v.createdAt)}</span></a>
         ${v.caption ? `<div class="cap" data-act="cap">${K.linkify(v.caption)}</div>` : ''}
-        <div class="song">${icon('music', 'sm')}<span>${esc(v.song)}</span></div>
+        ${v.sound && v.sound.id ? `<a class="song" href="#/sound/${esc(v.sound.id)}">${icon('music', 'sm')}<span>${esc(v.song)}</span></a>` : `<div class="song">${icon('music', 'sm')}<span>${esc(v.song)}</span></div>`}
       </div>
       <div class="rail">
         <div class="face ${v.mine || v.following || v.requested ? 'following' : ''}" data-face>
@@ -105,6 +106,7 @@
       }
       vid.muted = K.muted;
       vid.currentTime = 0;
+      vid.playbackRate = K.speed || 1;
       const item = itemOf(reel.dataset.id);
       if (item && item.sound && item.sound.url) st.sfx = K.fx.sound(vid, item.sound);
       const p = vid.play();
@@ -255,6 +257,21 @@
       }
     });
 
+    function hideReel(v) {
+      const r = reelEl(v.id);
+      if (!r) return;
+      const next = r.nextElementSibling;
+      r.remove();
+      st.items = st.items.filter((x) => x.id !== v.id);
+      $$('.reel', feed).forEach((x, i) => (x.dataset.i = i));
+      st.active = -1;
+      if (!st.items.length) feed.innerHTML = `<div class="feed-empty">${opts.empty || K.empty('video', 'Başka video yok')}</div>`;
+      else {
+        const target = next && next.classList.contains('reel') ? next : $$('.reel', feed).pop();
+        target.scrollIntoView();
+      }
+    }
+
     K.on(feed, 'click', '[data-act]', async (b, ev) => {
       const act = b.dataset.act;
       const reel = b.closest('.reel');
@@ -272,6 +289,13 @@
       if (act === 'share') return K.shareVideo(v, (n) => ((v.shares = n), paint(v)));
       if (act === 'more')
         return K.videoMenu(v, {
+          onSpeed: (s) => {
+            K.speed = s;
+            K.store.set('speed', String(s));
+            const act = $$('.reel video', feed)[st.active];
+            if (act) act.playbackRate = s;
+          },
+          onHide: () => hideReel(v),
           onUpdate: (nv) => {
             Object.assign(v, nv);
             const r = reelEl(v.id);
@@ -469,6 +493,30 @@
       return () => feed && feed.destroy();
     },
     { feed: true, nav: 'home' }
+  );
+
+  /* ---------------- ses sayfası ---------------- */
+  K.route(
+    '/sound/:id',
+    async (ctx) => {
+      const v = ctx.view;
+      const id = ctx.params.id;
+      v.innerHTML = `<div id="feed-root" style="position:absolute;inset:0"></div>
+        <div class="feed-top"><button class="ico left icon-btn" data-back aria-label="Geri">${icon('back')}</button>
+          <b id="sndname" class="ellipsis" style="max-width:55%">Ses</b>
+          <a class="btn sm primary" style="margin-left:auto;margin-right:8px" href="#/upload?sound=${encodeURIComponent(id)}">${icon('plus', 'sm')} Bu sesi kullan</a></div>`;
+      K.on(v, 'click', '[data-back]', () => K.back('/'));
+      const feed = K.createFeed($('#feed-root', v), {
+        load: async (page) => {
+          const r = await K.api(`/videos/by-sound/${encodeURIComponent(id)}?page=${page}`);
+          if (r.sound) $('#sndname', v).textContent = r.sound.name + (r.total ? ` · ${r.total} video` : '');
+          return r;
+        },
+        empty: K.empty('music', 'Bu sesle video yok', 'İlk videoyu sen paylaş!'),
+      });
+      return () => feed.destroy();
+    },
+    { feed: true, hideNav: false, nav: '' }
   );
 
   /* ---------------- tek video ---------------- */

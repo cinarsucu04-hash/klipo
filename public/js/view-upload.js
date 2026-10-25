@@ -57,6 +57,13 @@
       let xhrBusy = false;
       let overlays = []; // {t, x, y, c, s, bg} — x/y kutunun yüzdesi (0-1)
       let sound = null; // {id, name, url, vol, orig}
+      if (ctx.query && ctx.query.sound) {
+        // "Bu sesi kullan" ile gelindi: sesi önceden seç
+        try {
+          const r = await K.api(`/videos/by-sound/${encodeURIComponent(ctx.query.sound)}?page=0`);
+          if (r.sound) sound = { id: r.sound.id, name: r.sound.name, url: r.sound.url, vol: 0.8, orig: 0.3 };
+        } catch (e) { /* ses yoksa boş geç */ }
+      }
       let sfx = null;
       const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
       const fmt = (sec) => (sec ? `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}` : '');

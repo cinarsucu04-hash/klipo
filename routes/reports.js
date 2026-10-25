@@ -7,6 +7,7 @@ const { sid } = require('../lib/services');
 const storage = require('../lib/storage');
 
 const router = express.Router();
+const AUTO_HIDE_REPORTS = 5; // aynı videoyu şikayet eden farklı kişi sayısı
 
 // Kullanıcı / video / yorum şikayeti (kanıt görseli isteğe bağlı)
 router.post(
@@ -55,6 +56,16 @@ router.post(
       status: 'open',
       createdAt: new Date(),
     });
+
+    // Çok sayıda farklı kişi aynı videoyu şikayet ettiyse, yönetici bakana kadar otomatik gizlenir
+    if (type === 'video') {
+      try {
+        const reporters = await cols.reports.distinct('reporterId', { type: 'video', targetId, status: 'open' });
+        if (reporters.length >= AUTO_HIDE_REPORTS) {
+          await cols.videos.updateOne({ _id: targetId, removed: { $ne: true } }, { $set: { removed: true, autoRemoved: true } });
+        }
+      } catch (e) { /* şikayet kaydı zaten alındı */ }
+    }
     res.json({ ok: true });
   })
 );

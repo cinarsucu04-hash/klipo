@@ -8,8 +8,9 @@ const {
 } = require('../lib/services');
 const storage = require('../lib/storage');
 const { uploadLimiter } = require('../lib/middleware');
+const moderation = require('../lib/moderation');
 const { purgeVideo, purgeComment } = require('../lib/purge');
-const { parseOverlays, resolveSound } = require('../lib/sounds');
+const { parseOverlays, resolveSound, findBuiltin } = require('../lib/sounds');
 
 const router = express.Router();
 const commentsRouter = express.Router();
@@ -40,6 +41,7 @@ router.get(
     const { skip, limit } = pageParams(req, 8, 20);
     const blocked = await blockedIds(req.user._id);
     const blockedSet = new Set(blocked.map(sid));
+    const hidden = (req.user.hiddenVideos || []).slice(-500);
     let list;
 
     if (type === 'following') {
@@ -51,7 +53,7 @@ router.get(
       list = await cols.videos.find(filter).sort({ createdAt: -1, _id: -1 }).skip(skip).limit(limit + 1).toArray();
     } else if (type === 'new') {
       list = await cols.videos
-        .find(publicVideoFilter(req.user, blocked))
+        .find({ ...publicVideoFilter(req.user, blocked), ...(hidden.length ? { _id: { $nin: hidden } } : {}) })
         .sort({ createdAt: -1, _id: -1 })
         .skip(skip)
         .limit(limit + 1)
@@ -60,6 +62,7 @@ router.get(
       // "Sizin için": etkileşim puanı / zaman aşımı (yeni ve popüler videolar üstte)
       const now = Date.now();
       const match = { ...publicVideoFilter(req.user, blocked), createdAt: { $gte: new Date(now - 60 * 86400000) } };
+      if (hidden.length) match._id = { $nin: hidden };
       list = await cols.videos
         .aggregate([
           { $match: match },
@@ -119,6 +122,7 @@ router.post(
     if (req.user.isPrivate && visibility === 'public') visibility = 'followers';
 
     const overlays = parseOverlays(body.overlays);
+    await moderation.enforce(req, [caption, clean(body.song, 60)].concat(overlays.map((o) => o.t)).join(' \n '), 'video');
     const sound = await resolveSound(body.soundId, body.musicVol, body.origVol);
 
     const savedVideo = await storage.save(vf, 'video', 'video');
@@ -164,6 +168,47 @@ router.post(
   })
 );
 
+// ---------------------------------------------------------------- SES SAYFASI
+router.get(
+  '/by-sound/:sid',
+  wrap(async (req, res) => {
+    const soundId = clean(req.params.sid, 40);
+    const { skip, limit } = pageParams(req, 12, 30);
+    const blocked = await blockedIds(req.user._id);
+    const list = await cols.videos
+      .find({ ...publicVideoFilter(req.user, blocked), 'sound.id': soundId })
+      .sort({ likes: -1, createdAt: -1, _id: -1 })
+      .skip(skip)
+      .limit(limit + 1)
+      .toArray();
+    let sound = findBuiltin(soundId);
+    if (!sound) {
+      const id = /^[a-f0-9]{24}$/i.test(soundId) ? oid(soundId) : null;
+      const d = id ? await cols.sounds.findOne({ _id: id }) : null;
+      if (d) sound = { id: soundId, name: d.name, url: d.url };
+    }
+    if (!sound && !list.length) throw new HttpError(404, 'Ses bulunamadı.');
+    const total = await cols.videos.countDocuments({ ...publicVideoFilter(req.user, blocked), 'sound.id': soundId });
+    const hasMore = list.length > limit;
+    res.json({
+      sound: sound ? { id: sound.id, name: sound.name, url: sound.url } : null,
+      total,
+      videos: await hydrateVideos(list.slice(0, limit), req.user),
+      hasMore,
+    });
+  })
+);
+
+// "İlgilenmiyorum": video bu kişinin akışında bir daha çıkmaz
+router.post(
+  '/:id/hide',
+  wrap(async (req, res) => {
+    const v = await loadVisibleVideo(req);
+    await cols.users.updateOne({ _id: req.user._id }, { $push: { hiddenVideos: { $each: [v._id], $slice: -500 } } });
+    res.json({ ok: true });
+  })
+);
+
 // ---------------------------------------------------------------- TEK VİDEO
 router.get(
   '/:id',
@@ -184,6 +229,7 @@ router.patch(
     const set = {};
     if (body.caption !== undefined) {
       set.caption = clean(body.caption, 300);
+      await moderation.enforce(req, set.caption, 'video');
       set.hashtags = extractHashtags(set.caption);
     }
     if (VISIBILITIES.includes(body.visibility)) {
@@ -358,6 +404,7 @@ router.post(
     const body = req.body || {};
     const text = clean(body.text, 500);
     if (!text) throw new HttpError(400, 'Yorum boş olamaz.');
+    await moderation.enforce(req, text, 'yorum', { contact: true, links: true });
 
     let parent = null;
     if (body.parentId) {

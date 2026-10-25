@@ -48,6 +48,7 @@
       try { vid.volume = clamp(snd.orig === undefined ? 1 : snd.orig); } catch (e) { /* iOS'ta ses düzeyi salt okunur */ }
       a.volume = clamp(snd.vol === undefined ? 0.8 : snd.vol);
       a.muted = vid.muted;
+      a.playbackRate = vid.playbackRate || 1;
     }
     function sync(force) {
       if (!alive) return;
@@ -67,6 +68,7 @@
     const onPlay = () => sync(true);
     const onPause = () => { if (!a.paused) a.pause(); };
     vid.addEventListener('volumechange', onVol);
+    vid.addEventListener('ratechange', onVol);
     vid.addEventListener('timeupdate', onTime);
     vid.addEventListener('playing', onPlay);
     vid.addEventListener('seeked', onPlay);

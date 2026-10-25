@@ -76,6 +76,7 @@
     async (ctx) => {
       const v = ctx.view;
       let mode = 'login';
+      let acct = 'real';
       const banned = K.bannedMsg || '';
       const inApp = /KlipoApp/.test(navigator.userAgent) || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
 
@@ -89,15 +90,51 @@
           <form id="af" class="col" autocomplete="on" novalidate>
             <label class="field"><span>Kullanıcı adı</span><input class="input" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="24" required></label>
             ${reg ? '<label class="field"><span>Görünen ad</span><input class="input" name="nickname" maxlength="30" autocomplete="nickname" placeholder="İsteğe bağlı"></label>' : ''}
-            <label class="field"><span>Şifre</span><input class="input" name="password" type="password" autocomplete="${reg ? 'new-password' : 'current-password'}" maxlength="72" required></label>
+            ${reg ? `<div class="field"><span>Hesap türü</span><div class="seg" id="acct" style="margin:0"><button type="button" data-a="real" class="${acct === 'real' ? 'active' : ''}">Gerçek hesap</button><button type="button" data-a="rp" class="${acct === 'rp' ? 'active' : ''}">RP hesabı</button></div><small class="hint">RP: karakter / rol yapma hesabı. Profilinde etiket olarak görünür.</small></div>` : ''}
+            <label class="field"><span>Şifre</span><input class="input" name="password" type="password" autocomplete="${reg ? 'new-password' : 'current-password'}" maxlength="72" required>${reg ? '<small class="hint">En az 8 karakter; harf ve rakam içersin.</small>' : ''}</label>
             <div class="error-text" id="aerr" role="alert"></div>
             <button class="btn primary block" type="submit" style="height:46px">${reg ? 'Hesap oluştur' : 'Giriş yap'}</button>
           </form>
+          ${K.google.enabled() ? '<div class="or-line"><span>veya</span></div><div class="gslot" id="gslot"></div>' : ''}
           <p class="hint center">Devam ederek topluluk kurallarını kabul etmiş olursun.</p>
           ${inApp ? '' : '<p class="hint center"><a href="/indir.html" style="color:inherit;text-decoration:underline">Uygulamayı indir</a></p>'}</div>`;
         $('#af input', v).focus();
+        const slot = $('#gslot', v);
+        if (slot) {
+          if (K.google.native()) {
+            slot.innerHTML = '<button type="button" class="btn block" id="g-app" style="height:46px">Google ile devam et</button>';
+            $('#g-app', v).onclick = () => K.google.openBrowser(acct);
+          } else {
+            K.google.button(slot, (credential) => googleLogin(credential));
+          }
+        }
+      }
+      function loggedIn(r) {
+        K.csrf = r.csrf;
+        K.me = r.user;
+        K.bannedMsg = '';
+        K.applyTheme(K.me.settings.theme || 'dark');
+        K.updateNav();
+        K.refreshCounters && K.refreshCounters();
+        K.go('/', true);
+        setTimeout(K.announce, 600);
+        K.push.sync();
+        setTimeout(K.push.prompt, 6000);
+        setTimeout(K.pickUsername, 500);
+      }
+      async function googleLogin(credential) {
+        const err = $('#aerr', v);
+        try {
+          loggedIn(await K.api('/auth/google', { method: 'POST', body: { credential, accountType: acct } }));
+        } catch (ex) {
+          if (err) err.textContent = ex.message;
+        }
       }
       paint();
+      K.on(v, 'click', '#acct [data-a]', (b) => {
+        acct = b.dataset.a;
+        $$('#acct [data-a]', v).forEach((x) => x.classList.toggle('active', x === b));
+      });
       K.on(v, 'click', '[data-m]', (b) => {
         mode = b.dataset.m;
         K.bannedMsg = '';
@@ -112,6 +149,7 @@
         const body = { username: f.username.value, password: f.password.value };
         if (mode === 'register') {
           body.nickname = f.nickname.value;
+          body.accountType = acct;
         }
         if (!body.username.trim() || !body.password) {
           err.textContent = 'Kullanıcı adı ve şifre gerekli.';
@@ -120,17 +158,7 @@
         btn.disabled = true;
         err.textContent = '';
         try {
-          const r = await K.api(`/auth/${mode}`, { method: 'POST', body });
-          K.csrf = r.csrf;
-          K.me = r.user;
-          K.bannedMsg = '';
-          K.applyTheme(K.me.settings.theme || 'dark');
-          K.updateNav();
-          K.refreshCounters && K.refreshCounters();
-          K.go('/', true);
-          setTimeout(K.announce, 600);
-          K.push.sync();
-          setTimeout(K.push.prompt, 6000);
+          loggedIn(await K.api(`/auth/${mode}`, { method: 'POST', body }));
         } catch (ex) {
           err.textContent = ex.message;
           btn.disabled = false;
@@ -221,6 +249,7 @@
         announce();
         K.push.sync();
         setTimeout(K.push.prompt, 6000);
+        setTimeout(K.pickUsername, 1500);
       }
     }
 

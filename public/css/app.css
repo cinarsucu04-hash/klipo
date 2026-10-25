@@ -368,3 +368,8 @@ textarea.input { resize: none; min-height: 84px; }
 .snd .play .pause { display: block; width: 12px; height: 14px; border-left: 4px solid currentColor; border-right: 4px solid currentColor; box-sizing: border-box; }
 .snd .meta { flex: 1; min-width: 0; text-align: left; display: flex; flex-direction: column; }
 .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+
+/* Giriş: Google düğmesi ve ayırıcı */
+.gslot { display: flex; justify-content: center; min-height: 44px; width: 100%; }
+.or-line { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; margin: 2px 0; }
+.or-line::before, .or-line::after { content: ''; flex: 1; height: 1px; background: var(--line, rgba(255,255,255,.14)); }
