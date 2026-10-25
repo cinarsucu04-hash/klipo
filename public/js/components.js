@@ -567,7 +567,8 @@
         });
         $('#ev-com', api.el).onclick = (e) => e.currentTarget.classList.toggle('on');
         $('#ev-save', api.el).onclick = async (e) => {
-          e.currentTarget.disabled = true;
+          const btn = e.currentTarget;
+          btn.disabled = true;
           try {
             const r = await K.api(`/videos/${video.id}`, {
               method: 'PATCH',
@@ -578,7 +579,7 @@
             onUpdate && onUpdate(r.video);
           } catch (err) {
             K.fail(err);
-            e.currentTarget.disabled = false;
+            btn.disabled = false;
           }
         };
       },

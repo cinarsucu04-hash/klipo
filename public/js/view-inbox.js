@@ -186,7 +186,8 @@
         <button class="btn primary block" id="g-go">Grubu oluştur</button></div>`,
       onMount: (api) => {
         $('#g-go', api.el).onclick = async (e) => {
-          e.currentTarget.disabled = true;
+          const btn = e.currentTarget;
+          btn.disabled = true;
           try {
             const r = await K.api('/chats/group', { method: 'POST', body: { name: $('#g-name', api.el).value, members: $('#g-mem', api.el).value } });
             api.close();
@@ -194,7 +195,7 @@
             K.go('/chat/' + r.chatId);
           } catch (err) {
             K.fail(err);
-            e.currentTarget.disabled = false;
+            btn.disabled = false;
           }
         };
       },

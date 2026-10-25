@@ -138,7 +138,8 @@
             <button class="btn primary block" id="pw-go">Güncelle</button></div>`,
           onMount: (api) => {
             $('#pw-go', api.el).onclick = async (e) => {
-              e.currentTarget.disabled = true;
+              const btn = e.currentTarget;
+              btn.disabled = true;
               try {
                 const r = await K.api('/auth/password', { method: 'POST', body: { current: $('#pw0', api.el).value, next: $('#pw1', api.el).value } });
                 if (r.csrf) K.csrf = r.csrf;
@@ -146,7 +147,7 @@
                 K.toast('Şifren güncellendi; diğer cihazlardaki oturumlar kapandı', 'ok');
               } catch (err) {
                 K.fail(err);
-                e.currentTarget.disabled = false;
+                btn.disabled = false;
               }
             };
           },

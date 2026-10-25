@@ -138,7 +138,8 @@
                 $$('#bn-d [data-d]', api.el).forEach((y) => y.classList.toggle('active', y === x));
               });
               $('#bn-go', api.el).onclick = async (e) => {
-                e.currentTarget.disabled = true;
+                const btn = e.currentTarget;
+                btn.disabled = true;
                 try {
                   await K.api(`/admin/users/${id}/ban`, { method: 'POST', body: { reason: $('#bn-r', api.el).value, days, ip: $('#bn-ip', api.el).checked } });
                   api.close();
@@ -146,7 +147,7 @@
                   load();
                 } catch (err) {
                   K.fail(err);
-                  e.currentTarget.disabled = false;
+                  btn.disabled = false;
                 }
               };
             },
@@ -236,11 +237,12 @@
         const del = $('#an-del', body);
         if (del) del.onclick = () => K.api('/admin/announcement', { method: 'DELETE' }).then(system).catch(K.fail);
         $('#mm', body).onclick = async (e) => {
-          const on = !e.currentTarget.classList.contains('on');
+          const btn = e.currentTarget;
+          const on = !btn.classList.contains('on');
           if (on && !(await K.confirm({ title: 'Bakım modu açılsın mı?', text: 'Yöneticiler dışındaki herkes siteye erişemez.', ok: 'Aç', danger: true }))) return;
           try {
             await K.api('/admin/maintenance', { method: 'POST', body: { on } });
-            e.currentTarget.classList.toggle('on', on);
+            btn.classList.toggle('on', on);
           } catch (err) {
             K.fail(err);
           }
