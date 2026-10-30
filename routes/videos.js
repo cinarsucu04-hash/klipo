@@ -1,7 +1,7 @@
 'use strict';
 const express = require('express');
 const { cols } = require('../lib/db');
-const { HttpError, wrap, oid, clean, pageParams, bool } = require('../lib/helpers');
+const { HttpError, wrap, oid, clean, pageParams, bool, tolerateFull } = require('../lib/helpers');
 const { extractHashtags, extractMentions } = require('../lib/text');
 const {
   sid, userCard, usersById, blockedIds, isBlockedEitherWay, hydrateVideos, canSeeVideo, publicVideoFilter, notify, logAdmin,
@@ -351,12 +351,11 @@ router.post(
   wrap(async (req, res) => {
     const v = await loadVisibleVideo(req);
     if (sid(v.userId) !== sid(req.user._id)) {
-      const r = await cols.history.updateOne(
-        { userId: req.user._id, videoId: v._id },
-        { $set: { viewedAt: new Date() } },
-        { upsert: true }
+      // depolama doluyken izleme kaydı yazılamasa da video izlenebilmeli
+      const r = await tolerateFull(
+        cols.history.updateOne({ userId: req.user._id, videoId: v._id }, { $set: { viewedAt: new Date() } }, { upsert: true })
       );
-      if (r.upsertedCount) await cols.videos.updateOne({ _id: v._id }, { $inc: { views: 1 } });
+      if (r && r.upsertedCount) await tolerateFull(cols.videos.updateOne({ _id: v._id }, { $inc: { views: 1 } }));
     }
     res.json({ ok: true });
   })

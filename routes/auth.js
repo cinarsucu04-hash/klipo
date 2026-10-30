@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const cfg = require('../lib/config');
 const { cols } = require('../lib/db');
-const { HttpError, wrap, clean } = require('../lib/helpers');
+const { HttpError, wrap, clean, tolerateFull } = require('../lib/helpers');
 const { isValidUsername, RESERVED_USERNAMES, REPORT_REASONS } = require('../lib/text');
 const { presentMe, getSettings } = require('../lib/services');
 const { ensureCsrf, authLimiter, requireAuth } = require('../lib/middleware');
@@ -279,16 +279,16 @@ router.post(
       if (user) {
         const fails = (user.failCount || 0) + 1;
         const set = fails >= MAX_FAILS ? { failCount: 0, lockUntil: new Date(Date.now() + LOCK_MS) } : { failCount: fails };
-        await cols.users.updateOne({ _id: user._id }, { $set: set });
+        await tolerateFull(cols.users.updateOne({ _id: user._id }, { $set: set }));
       }
       if (user && user.noPassword) throw new HttpError(401, 'Bu hesap Google ile açılmış. "Google ile devam et" düğmesini kullan.');
       throw new HttpError(401, 'Kullanıcı adı / e-posta veya şifre hatalı.', req.session.loginFails >= 3 ? 'NEEDCAPTCHA' : undefined);
     }
     if (await security.refreshBan(user)) throw new HttpError(403, security.banMessage(user), 'BANNED');
     const ipHash = security.ipHashOf(req);
-    await cols.users.updateOne(
-      { _id: user._id },
-      { $set: { lastActive: new Date(), lastIpHash: ipHash, failCount: 0 }, $unset: { lockUntil: '' } }
+    // depolama doluyken bu kayıt yazılamasa da giriş çalışmalı (yönetici içeri girip yer açabilsin)
+    await tolerateFull(
+      cols.users.updateOne({ _id: user._id }, { $set: { lastActive: new Date(), lastIpHash: ipHash, failCount: 0 }, $unset: { lockUntil: '' } })
     );
     const csrfToken = await startSession(req, user);
     delete user.password;

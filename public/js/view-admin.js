@@ -96,10 +96,10 @@
               ? `<p class="hint" style="margin:4px 0 10px">Bağlı: ${esc(ex.info.host)} · kova ${esc(ex.info.bucket)}</p><button class="btn sm" id="st-test">Bağlantıyı dene</button>`
               : `<p class="hint" style="margin:4px 0 10px">Ayarlı değil. Videolar şu an MongoDB’de duruyor; ücretsiz kota (${u ? mb(u.quotaBytes) : '512 MB'}) dolunca yeni yükleme yapılamaz. Ücretsiz bir S3 uyumlu depo bağlayınca yeni videolar oraya gider, eskiler yerinde kalır.</p>
                 <details><summary class="btn sm">Nasıl bağlanır?</summary><ol class="howto">
-                  <li>Cloudflare <b>R2</b> veya Backblaze <b>B2</b> hesabı aç (ikisinde de ilk 10 GB ücretsiz; kayıtta kart istenebilir).</li>
+                  <li><b>Filebase</b> (5 GB ücretsiz, kart istemez), Cloudflare <b>R2</b> veya Backblaze <b>B2</b> (10 GB ücretsiz; kayıtta kart istenebilir) hesabı aç.</li>
                   <li>Bir <b>kova (bucket)</b> oluştur, herkese açık yapma.</li>
                   <li>Okuma+yazma yetkili bir <b>S3 API anahtarı</b> oluştur; uç nokta adresini, Access Key ID ve Secret’ı kopyala.</li>
-                  <li>Render → servisin <b>Environment</b> bölümüne ekle: <code>S3_ENDPOINT</code>, <code>S3_BUCKET</code>, <code>S3_KEY_ID</code>, <code>S3_SECRET</code> (R2 için ayrıca <code>S3_REGION</code> = <code>auto</code>). Kaydedince Render yeniden başlar.</li>
+                  <li>Render → servisin <b>Environment</b> bölümüne ekle: <code>S3_ENDPOINT</code>, <code>S3_BUCKET</code>, <code>S3_KEY_ID</code>, <code>S3_SECRET</code> (R2 ve Filebase için ayrıca <code>S3_REGION</code> = <code>auto</code>; Filebase uç noktası <code>https://s3.filebase.io</code>). Kaydedince Render yeniden başlar.</li>
                   <li>Buraya dön: <b>Bağlantıyı dene</b> → <b>Kopyala</b> → <b>MongoDB’de yer aç</b>.</li></ol></details>`}</div>
           ${ex.configured ? `<div class="card"><b>Mevcut videoları taşı</b>
             <p class="hint" style="margin:4px 0 10px"><b>1 · Kopyala</b>: MongoDB’deki dosyaları dış depoya kopyalar. Hiçbir şey silinmez, uygulama aynen çalışır.</p>

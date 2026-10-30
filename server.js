@@ -5,6 +5,7 @@ const helmet = require('helmet');
 const compression = require('compression');
 const session = require('express-session');
 const MongoStore = require('connect-mongo');
+const { FallbackStore } = require('./lib/sessionstore');
 
 const cfg = require('./lib/config');
 const db = require('./lib/db');
@@ -86,7 +87,8 @@ function buildSession() {
     saveUninitialized: false,
     rolling: true,
     proxy: true,
-    store: MongoStore.create({ clientPromise: Promise.resolve(db.state.client), dbName: cfg.DB_NAME, collectionName: 'sessions', ttl: 30 * 24 * 3600, touchAfter: 3600 }),
+    // TTL dizini db.js içinde (yazma kapalıyken başlangıcı engellemesin diye) oluşturulur; depo dolunca oturumlar bellekte tutulur
+    store: new FallbackStore(MongoStore.create({ clientPromise: Promise.resolve(db.state.client), dbName: cfg.DB_NAME, collectionName: 'sessions', ttl: 30 * 24 * 3600, touchAfter: 3600, autoRemove: 'disabled' })),
     cookie: { httpOnly: true, sameSite: 'lax', secure: cfg.isProd ? 'auto' : false, maxAge: 30 * 24 * 3600 * 1000 },
   });
 }

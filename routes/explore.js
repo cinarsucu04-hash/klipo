@@ -2,7 +2,7 @@
 // Arama, keşfet, etiket sayfaları, öneriler, bildirimler ve sayaçlar
 const express = require('express');
 const { cols } = require('../lib/db');
-const { wrap, clean, escapeRegex, pageParams } = require('../lib/helpers');
+const { wrap, clean, escapeRegex, pageParams, tolerateFull } = require('../lib/helpers');
 const {
   sid, userCard, usersById, blockedIds, hydrateVideos, publicVideoFilter,
 } = require('../lib/services');
@@ -41,10 +41,8 @@ router.get(
     if (!term) return res.json(out);
 
     if (req.query.save === '1' && raw.length >= 2) {
-      await cols.searches.updateOne(
-        { userId: me._id, query: raw.toLowerCase() },
-        { $set: { updatedAt: new Date() } },
-        { upsert: true }
+      await tolerateFull(
+        cols.searches.updateOne({ userId: me._id, query: raw.toLowerCase() }, { $set: { updatedAt: new Date() } }, { upsert: true })
       );
     }
 
