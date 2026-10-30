@@ -88,11 +88,48 @@ Android SDK ve Gradle indirmeleri bu geliştirme ortamından erişilebilir deği
 - **Giriş güvenliği:** 5 hatalı şifreden sonra hesap 15 dakika kilitlenir; yeni şifreler en az 8 karakter, harf+rakam olmalı ve yaygın şifreler reddedilir; şifre değişince diğer cihazlardaki oturumlar kapanır; *Ayarlar → Tüm cihazlardan çıkış yap*.
 - **Google ile devam et (isteğe bağlı):** [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → *OAuth istemci kimliği* → tür *Web uygulaması*; *Yetkili JavaScript kaynakları*na Render adresini (`https://ADIN.onrender.com`) ekle; çıkan **İstemci Kimliği**ni Render'da `GOOGLE_CLIENT_ID` olarak gir. Ayarlanmazsa düğme görünmez. Google'dan açılan hesap otomatik kullanıcı adı alır, ilk girişte kendi adını seçer. Android uygulamasında (Google, gömülü tarayıcıdan girişe izin vermediği için) giriş sistem tarayıcısında yapılır ve uygulamaya otomatik döner; bunun için APK'nın yeniden derlenmesi gerekir.
 
+## E-posta doğrulaması, captcha ve şifre sıfırlama
+
+- **Kayıt:** kullanıcı Gmail adresini yazar, e-postasına **6 haneli kod** gelir (10 dakika geçerli, 5 deneme, 60 sn'de bir yeniden gönderme). Kod her kayıt için rastgele üretilir; kimseyle aynı olmaz, veritabanında düz yazı olarak tutulmaz. Aynı Gmail'in nokta/`+etiket` varyantlarıyla ikinci hesap açılamaz. Varsayılan olarak yalnızca `gmail.com` kabul edilir (`ALLOWED_EMAIL_DOMAINS` ile değiştirilir).
+- **Captcha:** kayıt, giriş (3 hatadan sonra), şifre sıfırlama ve kod isteme ekranlarında resimli güvenlik kodu istenir. Kendi içinde çalışır, ek hesap gerekmez; basit bir koruma olduğundan gelişmiş botlara karşı tam çözüm değildir.
+- **Şifremi unuttum:** giriş ekranından e-postaya gelen kodla yeni şifre belirlenir; diğer cihazların oturumları kapanır. **E-postası olmayan eski hesaplar** bu özelliği kullanamaz (henüz "e-posta ekle" ekranı yok).
+- **E-posta gönderimi (Render ücretsiz plan SMTP'yi engeller, bu yüzden hepsi HTTPS API'dir).** Birini seç, Render → Environment'a gir:
+  - **Brevo (en kolayı):** brevo.com'da ücretsiz hesap (günde 300 e-posta) → *SMTP & API → API keys* → `BREVO_API_KEY`, ayrıca `MAIL_FROM` (doğrulanmış gönderen adres). Alan adın yoksa gönderen olarak Gmail adresini kullanırsan mesajlar **spam'e düşebilir ya da reddedilebilir**.
+  - **Gmail API (alan adı gerekmez, en güvenilir):** Google Cloud'da Gmail API'yi açıp OAuth istemcisi ve *refresh token* üret; `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`, `MAIL_FROM` (aynı Gmail). Kurulumu telefondan zordur.
+  - **Resend:** kendi alan adın varsa `RESEND_API_KEY` + `MAIL_FROM`.
+  - Hiçbiri ayarlı değilse kayıt **e-posta doğrulaması olmadan**, yalnızca captcha ile çalışmaya devam eder. `EMAIL_VERIFY=0` doğrulamayı bilerek kapatır.
+
+## TikTok'taki özellikler
+
+- **Düet:** videonun `⋯` menüsünden *Düet yap*; kendi videon özgün videonun yanında yan yana oynar. Düet için özgün video herkese açık olmalı ve sahibi izin vermiş olmalı (yüklerken / *Düzenle*'den kapatılır). Düet videosu tekrar düet yapılamaz; özgün video silinirse düet normal video olarak kalır.
+- **Filtreler:** yüklerken 7 filtre (canlı, sıcak, soğuk, siyah-beyaz, nostalji, dramatik, parlak). Yazı ve müzik gibi **dosyaya işlenmez**, oynatırken uygulanır.
+- **Arkadaşlar akışı:** karşılıklı takipleştiğin kişilerin videoları (ana ekranda *Arkadaşlar* sekmesi).
+- **Temiz ekran:** videoya basılı tut, arayüz kaybolur; dokununca geri gelir.
+- **Otomatik kaydır:** `⋯` menüsünden aç/kapat; video bitince sıradakine geçer.
+- **İndirme izni:** videoyu sahibi *Düzenle*'den indirmeye kapatabilir. İndirilen dosya orijinal videodur (yazı/müzik/filtre içermez). Bu izin yalnızca arayüzde engellenir; teknik olarak dosyaya erişimi olan biri yine alabilir.
+- **Yaratıcı analizi:** *Ayarlar → Yaratıcı analizi*: toplam izlenme/beğeni/yorum/paylaşım/takipçi, son 7 günün grafikleri ve en çok izlenen 5 video.
+- Canlı yayın yoktur.
+
+## Depolama doldu mu? (Atlas 512 MB)
+
+Videolar varsayılan olarak MongoDB Atlas ücretsiz kümesinde (512 MB) saklanır. Dolunca Atlas yazmayı reddeder (`over your space quota`). Klipo bunu şöyle yönetir; **hiçbir hesap, video, yorum otomatik silinmez**:
+
+- **Yönetim paneli → Depolama:** doluluk yüzdesi, MongoDB'deki / dış depodaki dosya sayıları, en büyük koleksiyonlar, bağlantı denemesi ve taşıma araçları. Genel sekmede %70'ten sonra uyarı çıkar.
+- **Koruma:** doluluk `DB_GUARD_PCT` (varsayılan %92) eşiğini aşınca **yeni yüklemeler** nazik bir mesajla durdurulur; izleme, beğeni, yorum ve oturumlar için yer kalır. Mevcut içerik etkilenmez. `DB_QUOTA_MB` kotayı belirtir (varsayılan 512).
+- **Dış depo (önerilen çözüm):** S3 uyumlu ücretsiz bir depo bağla; yeni videolar oraya gider, MongoDB dolmaz.
+  1. Cloudflare **R2** ya da Backblaze **B2**'de hesap aç (ikisinde de ilk 10 GB ücretsiz; kayıtta kart istenebilir, güncel koşulları sitesinden doğrula). Bir *bucket* oluştur (herkese açık yapma) ve okuma+yazma yetkili bir S3 API anahtarı üret.
+  2. Render → Environment: `S3_ENDPOINT` (R2: `https://<hesap-kimliği>.r2.cloudflarestorage.com`, B2: `https://s3.<bölge>.backblazeb2.com`), `S3_BUCKET`, `S3_KEY_ID`, `S3_SECRET` (R2'de ayrıca `S3_REGION=auto`). Hepsi doluysa yeni yüklemeler otomatik dış depoya gider.
+  3. Panelde **Bağlantıyı dene** → **Kopyala** (MongoDB'deki dosyaları dış depoya kopyalar, **hiçbir şey silinmez**) → **MongoDB'de yer aç** (kopyası bayt bayt doğrulanan dosyaların MongoDB'deki nüshasını kaldırır; videolar dış depodan oynar; doğrulanamayan dosyaya dokunulmaz; onay için `EVET` yazılır).
+- **Panele giremiyorsan** (depolama %100 doluyken oturum yazılamayabilir): Render'da `S3_*` değişkenlerinin yanına `STORAGE_MIGRATE=copy+free` ekle; sunucu açılışta kopyalar, doğrular, yer açar (günlüklerde `[depolama]` satırlarını izle). Bitince değişkeni sil. Yalnızca kopyalamak istersen `STORAGE_MIGRATE=copy`.
+- **Sahipsiz dosyalar:** yarım kalan yüklemelerin MongoDB'de bıraktığı, hiçbir videoya bağlı olmayan (1 saatten eski) dosyalar panelde sayılır; *Sahipsiz dosyaları temizle* yalnızca onları siler.
+- Yüklemeleri küçültmek için `MAX_VIDEO_MB` değerini düşürebilirsin (varsayılan 60).
+- Render'ın kalıcı diski (ücretli plan) alternatifi: `STORAGE=disk` ve `UPLOAD_DIR` (diskin bağlandığı yol).
+
 ## 4) Klasör yapısı
 
 ```
 server.js            Express uygulaması, Render ayarları, başlatma
-lib/                 yapılandırma, veritabanı, depolama (GridFS/disk + Range), servisler, ara katmanlar
+lib/                 yapılandırma, veritabanı, depolama (GridFS/disk/S3 + Range), dış depo istemcisi, taşıma araçları, e-posta/captcha, servisler, ara katmanlar
 routes/              auth, videos, stories, users, me, explore, chats, reports, admin
 public/              arayüz (SPA), PWA dosyaları, ikonlar
 android/             WebView sarmalayıcı proje (Gradle wrapper dahil)
@@ -107,6 +144,7 @@ Oturum çerezi `httpOnly` + `sameSite=lax` (+ HTTPS'te `secure`), tüm yazma ist
 
 ## 6) Doğrulama durumu (dürüst not)
 
-- Arayüz, gerçek tarayıcıda (headless Chromium) sunucuyu taklit eden bir test sunucusuyla uçtan uca denendi: 73/73 kontrol geçti (giriş/kayıt, akış, çift dokunuşla beğeni, yorum, hikâye, mesajlaşma, yükleme, ayarlar, yönetici paneli, CSRF yenileme, bakım modu…).
+- Arayüz, gerçek tarayıcıda (headless Chromium) sunucuyu taklit eden bir test sunucusuyla uçtan uca denendi: 78/78 kontrol geçti (giriş/kayıt, akış, çift dokunuşla beğeni, yorum, hikâye, mesajlaşma, yükleme, ayarlar, yönetici paneli, CSRF yenileme, bakım modu…); ayrıca e-posta/captcha (14), yeni TikTok özellikleri (32) ve depolama paneli (20) için ayrı arayüz testleri geçti.
+- Dış depo istemcisi AWS'nin yayımladığı imza test vektörleriyle doğrulandı; kopyalama/doğrulama/boşaltma, doluluk koruması ve Atlas `over your space quota` hatası yerel sahte S3 sunucusu ve sahte GridFS ile 48 kontrolde denendi. **Gerçek R2/B2 ve gerçek Atlas ile denenmedi**; ilk kullanımda panelde *Bağlantıyı dene* ve küçük bir *Kopyala* denemesi yap.
 - Sunucu kodu bu ortamda **gerçek MongoDB ile çalıştırılmadı** (paket indirme engelliydi); sözdizimi, içe/dışa aktarma tutarlılığı ve elle inceleme ile denetlendi. İlk Render dağıtımında günlüklere (Logs) bakmanı ve `/healthz` ile bir kayıt/giriş/yükleme denemesi yapmanı öneririm.
 - Android projesi derlenmedi (yukarıya bakın); ilk derlemede küçük bir Gradle/AGP uyarısı çıkarsa iş akışı günlüğü nedenini gösterir.

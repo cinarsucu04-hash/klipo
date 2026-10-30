@@ -10,6 +10,71 @@
     SIZES,
   };
 
+  // Video filtreleri: kimlik → CSS (sunucu yalnızca bu kimlikleri kabul eder). Dosyaya işlenmez, oynatırken uygulanır.
+  K.fx.FILTERS = [
+    ['', 'Normal', ''],
+    ['canli', 'Canlı', 'saturate(1.45) contrast(1.1)'],
+    ['sicak', 'Sıcak', 'sepia(.28) saturate(1.3) hue-rotate(-8deg)'],
+    ['soguk', 'Soğuk', 'hue-rotate(18deg) saturate(1.1) brightness(1.04)'],
+    ['siyahbeyaz', 'Siyah-beyaz', 'grayscale(1) contrast(1.1)'],
+    ['nostalji', 'Nostalji', 'sepia(.55) contrast(.92) brightness(1.05)'],
+    ['dramatik', 'Dramatik', 'contrast(1.3) saturate(.9) brightness(.92)'],
+    ['parlak', 'Parlak', 'brightness(1.15) contrast(1.05) saturate(1.1)'],
+  ];
+  K.fx.filterCss = (id) => {
+    const f = K.fx.FILTERS.find((x) => x[0] === id);
+    return f ? f[2] : '';
+  };
+
+  // Düet: ikinci (orijinal) videoyu ana videoyla eşzamanlı oynatır
+  K.fx.duetSync = function (vid, o) {
+    let alive = true;
+    o.loop = true;
+    const sync = (force) => {
+      if (!alive) return;
+      if (vid.paused || vid.seeking || vid.readyState < 3) {
+        if (!o.paused) o.pause();
+        return;
+      }
+      if (o.paused) o.play().catch(() => {});
+      let target = vid.currentTime;
+      if (o.duration && isFinite(o.duration)) target = target % o.duration;
+      if (force === true || Math.abs(o.currentTime - target) > 0.45) {
+        try { o.currentTime = target; } catch (e) { /* henüz hazır değil */ }
+      }
+    };
+    const mute = () => {
+      o.muted = vid.muted;
+      try { o.volume = 0.6; } catch (e) { /* iOS'ta ses düzeyi salt okunur */ }
+      o.playbackRate = vid.playbackRate || 1;
+    };
+    const onTime = () => sync();
+    const onPlay = () => sync(true);
+    const onPause = () => { if (!o.paused) o.pause(); };
+    vid.addEventListener('timeupdate', onTime);
+    vid.addEventListener('playing', onPlay);
+    vid.addEventListener('seeked', onPlay);
+    vid.addEventListener('pause', onPause);
+    vid.addEventListener('waiting', onPause);
+    vid.addEventListener('volumechange', mute);
+    vid.addEventListener('ratechange', mute);
+    mute();
+    sync(true);
+    return {
+      destroy() {
+        alive = false;
+        vid.removeEventListener('timeupdate', onTime);
+        vid.removeEventListener('playing', onPlay);
+        vid.removeEventListener('seeked', onPlay);
+        vid.removeEventListener('pause', onPause);
+        vid.removeEventListener('waiting', onPause);
+        vid.removeEventListener('volumechange', mute);
+        vid.removeEventListener('ratechange', mute);
+        o.pause();
+      },
+    };
+  };
+
   // Rengin açık/koyu olduğuna göre okunur yazı rengi
   function ink(hex) {
     const n = parseInt(String(hex).slice(1), 16);

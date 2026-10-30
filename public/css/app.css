@@ -373,3 +373,32 @@ textarea.input { resize: none; min-height: 84px; }
 .gslot { display: flex; justify-content: center; min-height: 44px; width: 100%; }
 .or-line { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; margin: 2px 0; }
 .or-line::before, .or-line::after { content: ''; flex: 1; height: 1px; background: var(--line, rgba(255,255,255,.14)); }
+
+/* Captcha ve kod kutusu */
+.captcha { display: flex; align-items: center; gap: 8px; }
+.captcha img { border-radius: 10px; background: #eef1f8; max-width: calc(100% - 52px); height: auto; }
+.input.code { text-align: center; font-size: 26px; letter-spacing: 10px; font-weight: 700; height: 56px; }
+.linkbtn { background: none; border: 0; color: var(--brand, #fe2c55); font: inherit; font-weight: 600; cursor: pointer; padding: 4px 6px; }
+
+/* ---- depolama (yönetim) ---- */
+.warnbox { border-color: #f59e0b; background: color-mix(in srgb, #f59e0b 10%, var(--bg2)); }
+.gauge.warn .progress > i { background: #f59e0b; }
+.gauge.bad .progress > i { background: var(--danger); }
+.gauge.ok .progress > i { background: var(--ok); }
+.howto { margin: 10px 0 0; padding-left: 20px; font-size: 13px; line-height: 1.5; color: var(--muted); }
+.howto li { margin-bottom: 6px; }
+.howto code, .logpre { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+.howto code { background: var(--bg3); padding: 1px 5px; border-radius: 5px; color: var(--text); }
+.logpre { white-space: pre-wrap; word-break: break-word; background: var(--bg3); border-radius: 8px; padding: 8px; margin: 6px 0 0; max-height: 160px; overflow: auto; }
+
+/* ---- düet, temiz ekran, analiz ---- */
+.reel.duet video, .editor.duet video { inset: auto; top: 50%; transform: translateY(-50%); width: 50%; height: auto; aspect-ratio: 9 / 16; right: 0; left: auto; }
+.reel.duet video.duet-orig, .editor.duet video.duet-orig { left: 0; right: auto; }
+.editor.duet video.duet-orig { pointer-events: none; }
+.duet-tag { align-self: flex-start; display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 600; padding: 3px 10px 3px 8px; border-radius: 12px; background: rgba(0,0,0,.45); backdrop-filter: blur(4px); }
+.duet-tag .icon { width: 14px; height: 14px; }
+body.clean-ui .reel .info, body.clean-ui .reel .rail, body.clean-ui .reel .bar, body.clean-ui .reel .sound-hint,
+body.clean-ui .reel .shade, body.clean-ui .feed-top, body.clean-ui #nav { opacity: 0; pointer-events: none; transition: opacity .2s; }
+#flt { padding: 0; margin: 0 -2px; }
+.list-item .rank { width: 18px; text-align: center; font-weight: 700; color: var(--muted); }
+.thumb-sm { width: 44px; height: 58px; border-radius: 8px; object-fit: cover; background: var(--bg3); display: grid; place-items: center; flex: none; }

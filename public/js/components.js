@@ -558,6 +558,8 @@
           <button data-v="followers" class="${vis === 'followers' ? 'active' : ''}">Takipçiler</button>
           <button data-v="private" class="${vis === 'private' ? 'active' : ''}">Yalnızca ben</button></div></div>
         <div class="row"><span class="grow">Yorumlara izin ver</span><button class="switch ${video.allowComments ? 'on' : ''}" id="ev-com" aria-label="Yorumlar"></button></div>
+        ${video.duet ? '' : `<div class="row"><span class="grow">Düete izin ver</span><button class="switch ${video.allowDuet !== false ? 'on' : ''}" id="ev-duet" aria-label="Düet"></button></div>`}
+        <div class="row"><span class="grow">Başkaları indirebilsin</span><button class="switch ${video.allowDownload !== false ? 'on' : ''}" id="ev-dl" aria-label="İndirme"></button></div>
         <button class="btn primary block" id="ev-save">Kaydet</button></div>`,
       onMount: (api) => {
         let v = vis;
@@ -566,13 +568,22 @@
           $$('#ev-vis button', api.el).forEach((x) => x.classList.toggle('active', x === b));
         });
         $('#ev-com', api.el).onclick = (e) => e.currentTarget.classList.toggle('on');
+        const duetSw = $('#ev-duet', api.el);
+        if (duetSw) duetSw.onclick = (e) => e.currentTarget.classList.toggle('on');
+        $('#ev-dl', api.el).onclick = (e) => e.currentTarget.classList.toggle('on');
         $('#ev-save', api.el).onclick = async (e) => {
           const btn = e.currentTarget;
           btn.disabled = true;
           try {
             const r = await K.api(`/videos/${video.id}`, {
               method: 'PATCH',
-              body: { caption: $('#ev-cap', api.el).value, visibility: v, allowComments: $('#ev-com', api.el).classList.contains('on') },
+              body: {
+                caption: $('#ev-cap', api.el).value,
+                visibility: v,
+                allowComments: $('#ev-com', api.el).classList.contains('on'),
+                allowDownload: $('#ev-dl', api.el).classList.contains('on'),
+                ...(duetSw ? { allowDuet: duetSw.classList.contains('on') } : {}),
+              },
             });
             api.close();
             K.toast('Kaydedildi', 'ok');
@@ -602,6 +613,28 @@
           label: s === 1 ? 'Normal (1x)' : `${s}x`,
           run: () => { ctx.onSpeed(s); K.toast(`Hız ${s}x`); },
         }))),
+      });
+    }
+    if (ctx.onAuto) {
+      items.push({ icon: 'refresh', label: `Otomatik kaydır: ${K.auto ? 'açık' : 'kapalı'}`, run: () => ctx.onAuto() });
+    }
+    // düet: herkese açık, kendi videosu olmayan, düete izin veren ve kendisi düet olmayan videolar
+    if (!video.mine && video.visibility === 'public' && video.allowDuet !== false && !video.duet) {
+      items.push({ icon: 'users', label: 'Düet yap', run: () => K.go('/upload?duet=' + video.id) });
+    }
+    if (video.mine || video.allowDownload !== false) {
+      items.push({
+        icon: 'download',
+        label: 'Videoyu indir',
+        run: () => {
+          const a = document.createElement('a');
+          a.href = video.mediaUrl;
+          a.download = 'klipo-' + video.id + '.mp4';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          K.toast('İndiriliyor · yazı, müzik ve filtre dosyaya işlenmez', 'ok');
+        },
       });
     }
     if (video.mine) {

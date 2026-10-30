@@ -9,7 +9,7 @@ const MongoStore = require('connect-mongo');
 const cfg = require('./lib/config');
 const db = require('./lib/db');
 const storage = require('./lib/storage');
-const { HttpError, wrap, sleep } = require('./lib/helpers');
+const { HttpError, wrap, sleep, isQuotaError, FULL_MESSAGE } = require('./lib/helpers');
 const mw = require('./lib/middleware');
 const security = require('./lib/security');
 const push = require('./lib/push');
@@ -165,7 +165,12 @@ app.use((err, req, res, next) => {
     status = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
     message = err.code === 'LIMIT_FILE_SIZE' ? 'Dosya çok büyük. İzin verilen boyutu aştın.' : 'Dosya yüklenemedi.';
   }
-  if (status >= 500) {
+  if (isQuotaError(err)) {
+    status = 507;
+    message = FULL_MESSAGE;
+    err.code = 'STORAGE_FULL';
+    console.error('[depolama dolu]', req.method, req.originalUrl);
+  } else if (status >= 500 && !(err instanceof HttpError)) {
     console.error('[hata]', req.method, req.originalUrl, err);
     message = 'Sunucuda bir hata oluştu. Lütfen tekrar dene.';
   }
@@ -190,6 +195,7 @@ async function connectWithRetry() {
       buildSession();
       await push.init().catch((e) => console.error('[push] başlatılamadı (bildirimler kapalı):', e.message));
       console.log('MongoDB bağlantısı hazır.');
+      if (cfg.STORAGE_MIGRATE) require('./lib/storagetools').bootMigrate(cfg.STORAGE_MIGRATE).catch((e) => console.error('[depolama] acil taşıma hatası:', e.message));
       return;
     } catch (e) {
       db.state.error = e.message;

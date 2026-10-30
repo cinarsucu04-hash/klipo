@@ -13,10 +13,11 @@
     follow: () => 'seni takip etmeye başladı',
     follow_request: () => 'seni takip etmek istiyor',
     follow_accepted: () => 'takip isteğini kabul etti',
+    duet: () => 'videonla düet yaptı',
   };
   const NOTIF_BADGE = {
     like: ['heart', '#ff3d5a'], comment_like: ['heart', '#ff3d5a'], comment: ['comment', '#8b5cf6'], reply: ['comment', '#8b5cf6'],
-    mention: ['hash', '#f59e0b'], follow: ['user-plus', '#3b9bff'], follow_request: ['user-plus', '#3b9bff'], follow_accepted: ['check', '#16a34a'],
+    mention: ['hash', '#f59e0b'], follow: ['user-plus', '#3b9bff'], follow_request: ['user-plus', '#3b9bff'], follow_accepted: ['check', '#16a34a'], duet: ['video', '#8b5cf6'],
   };
   const FILTERS = [['', 'Tümü'], ['likes', 'Beğeniler'], ['comments', 'Yorumlar'], ['follows', 'Takip'], ['mentions', 'Bahsetmeler']];
 

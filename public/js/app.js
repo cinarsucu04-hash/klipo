@@ -70,35 +70,61 @@
     };
   };
 
-  /* ---------------- giriş / kayıt ---------------- */
+  /* ---------------- giriş / kayıt / e-posta doğrulama / şifre sıfırlama ---------------- */
   K.route(
     '/login',
     async (ctx) => {
       const v = ctx.view;
-      let mode = 'login';
+      let mode = 'login'; // login | register | verify | forgot | reset
       let acct = 'real';
+      let needCaptcha = false;
+      let pending = '';
+      let pendingEmail = '';
+      let resendAt = 0;
+      let timer = null;
+      const verifyOn = !!K.config.emailVerify;
       const banned = K.bannedMsg || '';
       const inApp = /KlipoApp/.test(navigator.userAgent) || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
 
-      function paint() {
-        const reg = mode === 'register';
-        v.innerHTML = `<div class="auth">
+      const captchaHTML = () => `<div class="field" id="capbox"><span>Güvenlik kodu</span>
+        <div class="captcha"><img id="cimg" alt="Güvenlik kodu resmi" width="190" height="64"><button type="button" class="icon-btn" id="cref" aria-label="Resmi yenile">${icon('refresh')}</button></div>
+        <input class="input" name="captcha" maxlength="8" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="Resimdeki harfleri yaz"></div>`;
+      const loadCaptcha = () => {
+        const img = $('#cimg', v);
+        if (img) img.src = '/api/auth/captcha?t=' + Date.now();
+        const inp = $('input[name=captcha]', v);
+        if (inp) inp.value = '';
+      };
+      const shell = (inner) => `<div class="auth">
           <img class="logo" src="/icons/icon-192.png" alt="" width="84" height="84">
-          <h1>${esc(K.config.appName)}</h1><p class="tagline">Kısa videolar. Büyük anlar.</p>
+          <h1>${esc(K.config.appName)}</h1><p class="tagline">Kısa videolar. Büyük anlar.</p>${inner}</div>`;
+      const back = '<p class="hint center"><button type="button" class="linkbtn" data-m="login">← Girişe dön</button></p>';
+
+      function paint() {
+        clearInterval(timer);
+        if (mode === 'verify') return paintVerify();
+        if (mode === 'forgot') return paintForgot();
+        if (mode === 'reset') return paintReset();
+        const reg = mode === 'register';
+        v.innerHTML = shell(`
           ${banned ? `<div class="card" style="margin:0;border-color:var(--danger)"><b>Hesap erişimi engellendi</b><p class="hint">${esc(banned)}</p></div>` : ''}
           <div class="seg"><button data-m="login" class="${reg ? '' : 'active'}">Giriş yap</button><button data-m="register" class="${reg ? 'active' : ''}">Kayıt ol</button></div>
           <form id="af" class="col" autocomplete="on" novalidate>
-            <label class="field"><span>Kullanıcı adı</span><input class="input" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="24" required></label>
+            <label class="field"><span>${reg ? 'Kullanıcı adı' : verifyOn ? 'Kullanıcı adı veya e-posta' : 'Kullanıcı adı'}</span><input class="input" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="${reg ? 24 : 254}" required></label>
             ${reg ? '<label class="field"><span>Görünen ad</span><input class="input" name="nickname" maxlength="30" autocomplete="nickname" placeholder="İsteğe bağlı"></label>' : ''}
+            ${reg && verifyOn ? `<label class="field"><span>Gmail adresin</span><input class="input" name="email" type="email" inputmode="email" autocomplete="email" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="254" placeholder="ornek@gmail.com" required><small class="hint">Bu adrese 6 haneli doğrulama kodu göndereceğiz.</small></label>` : ''}
             ${reg ? `<div class="field"><span>Hesap türü</span><div class="seg" id="acct" style="margin:0"><button type="button" data-a="real" class="${acct === 'real' ? 'active' : ''}">Gerçek hesap</button><button type="button" data-a="rp" class="${acct === 'rp' ? 'active' : ''}">RP hesabı</button></div><small class="hint">RP: karakter / rol yapma hesabı. Profilinde etiket olarak görünür.</small></div>` : ''}
             <label class="field"><span>Şifre</span><input class="input" name="password" type="password" autocomplete="${reg ? 'new-password' : 'current-password'}" maxlength="72" required>${reg ? '<small class="hint">En az 8 karakter; harf ve rakam içersin.</small>' : ''}</label>
+            ${reg || needCaptcha ? captchaHTML() : ''}
             <div class="error-text" id="aerr" role="alert"></div>
-            <button class="btn primary block" type="submit" style="height:46px">${reg ? 'Hesap oluştur' : 'Giriş yap'}</button>
+            <button class="btn primary block" type="submit" style="height:46px">${reg ? (verifyOn ? 'Devam et' : 'Hesap oluştur') : 'Giriş yap'}</button>
+            ${!reg && verifyOn ? '<p class="hint center"><button type="button" class="linkbtn" data-m="forgot">Şifreni mi unuttun?</button></p>' : ''}
           </form>
           ${K.google.enabled() ? '<div class="or-line"><span>veya</span></div><div class="gslot" id="gslot"></div>' : ''}
           <p class="hint center">Devam ederek topluluk kurallarını kabul etmiş olursun.</p>
-          ${inApp ? '' : '<p class="hint center"><a href="/indir.html" style="color:inherit;text-decoration:underline">Uygulamayı indir</a></p>'}</div>`;
+          ${inApp ? '' : '<p class="hint center"><a href="/indir.html" style="color:inherit;text-decoration:underline">Uygulamayı indir</a></p>'}`);
         $('#af input', v).focus();
+        if ($('#cimg', v)) loadCaptcha();
         const slot = $('#gslot', v);
         if (slot) {
           if (K.google.native()) {
@@ -109,6 +135,61 @@
           }
         }
       }
+
+      function paintVerify() {
+        v.innerHTML = shell(`
+          <h2 style="margin:6px 0 0;font-size:18px">E-postanı doğrula</h2>
+          <p class="hint center"><b>${esc(pendingEmail)}</b> adresine 6 haneli bir kod gönderdik. Kod 10 dakika geçerli. Gelmediyse Spam klasörüne bak.</p>
+          <form id="vf" class="col" novalidate>
+            <input class="input code" name="code" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" maxlength="6" placeholder="• • • • • •" aria-label="6 haneli kod" required>
+            <div class="error-text" id="aerr" role="alert"></div>
+            <button class="btn primary block" type="submit" style="height:46px">Doğrula ve hesabı aç</button>
+            <button class="btn block" type="button" id="rs" disabled>Kodu tekrar gönder</button>
+          </form>${back}`);
+        $('input[name=code]', v).focus();
+        tickResend();
+      }
+      function tickResend() {
+        const b = $('#rs', v);
+        if (!b) return;
+        clearInterval(timer);
+        const upd = () => {
+          const left = Math.ceil((resendAt - Date.now()) / 1000);
+          b.disabled = left > 0;
+          b.textContent = left > 0 ? `Kodu tekrar gönder (${left})` : 'Kodu tekrar gönder';
+          if (left <= 0) clearInterval(timer);
+        };
+        upd();
+        timer = setInterval(upd, 1000);
+      }
+
+      function paintForgot() {
+        v.innerHTML = shell(`
+          <h2 style="margin:6px 0 0;font-size:18px">Şifreni sıfırla</h2>
+          <p class="hint center">Hesabına bağlı e-posta adresini yaz; sana 6 haneli kod göndereceğiz.</p>
+          <form id="ff" class="col" novalidate>
+            <label class="field"><span>E-posta</span><input class="input" name="email" type="email" inputmode="email" autocomplete="email" autocapitalize="none" spellcheck="false" maxlength="254" placeholder="ornek@gmail.com" required></label>
+            ${captchaHTML()}
+            <div class="error-text" id="aerr" role="alert"></div>
+            <button class="btn primary block" type="submit" style="height:46px">Kod gönder</button>
+          </form>${back}`);
+        $('input[name=email]', v).focus();
+        loadCaptcha();
+      }
+
+      function paintReset() {
+        v.innerHTML = shell(`
+          <h2 style="margin:6px 0 0;font-size:18px">Yeni şifre belirle</h2>
+          <p class="hint center">${esc(pendingEmail)} adresine kayıtlıysa 6 haneli kod gönderdik.</p>
+          <form id="rf" class="col" novalidate>
+            <input class="input code" name="code" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" maxlength="6" placeholder="• • • • • •" aria-label="6 haneli kod" required>
+            <label class="field"><span>Yeni şifre</span><input class="input" name="password" type="password" autocomplete="new-password" maxlength="72" required><small class="hint">En az 8 karakter; harf ve rakam içersin.</small></label>
+            <div class="error-text" id="aerr" role="alert"></div>
+            <button class="btn primary block" type="submit" style="height:46px">Şifreyi değiştir ve giriş yap</button>
+          </form>${back}`);
+        $('input[name=code]', v).focus();
+      }
+
       function loggedIn(r) {
         K.csrf = r.csrf;
         K.me = r.user;
@@ -130,6 +211,7 @@
           if (err) err.textContent = ex.message;
         }
       }
+
       paint();
       K.on(v, 'click', '#acct [data-a]', (b) => {
         acct = b.dataset.a;
@@ -138,32 +220,102 @@
       K.on(v, 'click', '[data-m]', (b) => {
         mode = b.dataset.m;
         K.bannedMsg = '';
+        if (mode === 'login') needCaptcha = false;
         paint();
       });
+      K.on(v, 'click', '#cref', () => loadCaptcha());
+      K.on(v, 'click', '#rs', async (b) => {
+        b.disabled = true;
+        try {
+          await K.api('/auth/register/resend', { method: 'POST', body: { pending } });
+          resendAt = Date.now() + 60000;
+          K.toast('Yeni kod gönderildi', 'ok');
+        } catch (ex) {
+          const err = $('#aerr', v);
+          if (err) err.textContent = ex.message;
+          if (ex.code === 'EXPIRED' || ex.code === 'RATE') {
+            mode = 'register';
+            paint();
+            return;
+          }
+          resendAt = Date.now() + 10000;
+        }
+        tickResend();
+      });
+
+      // gönderme: formun kimliğine göre
       v.addEventListener('submit', async (e) => {
-        if (e.target.id !== 'af') return;
         e.preventDefault();
         const f = e.target;
         const err = $('#aerr', v);
         const btn = $('button[type=submit]', f);
-        const body = { username: f.username.value, password: f.password.value };
-        if (mode === 'register') {
-          body.nickname = f.nickname.value;
-          body.accountType = acct;
-        }
-        if (!body.username.trim() || !body.password) {
-          err.textContent = 'Kullanıcı adı ve şifre gerekli.';
-          return;
-        }
-        btn.disabled = true;
-        err.textContent = '';
-        try {
-          loggedIn(await K.api(`/auth/${mode}`, { method: 'POST', body }));
-        } catch (ex) {
+        const usedCaptcha = !!$('input[name=captcha]', f);
+        const field = (n) => (f[n] ? f[n].value : '');
+        const fail = (ex) => {
           err.textContent = ex.message;
           btn.disabled = false;
+          if (usedCaptcha) loadCaptcha(); // kod tek kullanımlıktır: her denemeden sonra yenilenir
+        };
+        err.textContent = '';
+        try {
+          if (f.id === 'af') {
+            const body = { username: field('username'), password: field('password') };
+            if (usedCaptcha) body.captcha = field('captcha');
+            if (!body.username.trim() || !body.password) {
+              err.textContent = 'Tüm alanları doldur.';
+              return;
+            }
+            if (mode === 'register') {
+              body.nickname = field('nickname');
+              body.accountType = acct;
+              if (!body.captcha) {
+                err.textContent = 'Resimdeki güvenlik kodunu yaz.';
+                return;
+              }
+              if (verifyOn) body.email = field('email');
+            }
+            btn.disabled = true;
+            if (mode === 'register' && verifyOn) {
+              const r = await K.api('/auth/register/start', { method: 'POST', body });
+              pending = r.pending;
+              pendingEmail = r.email;
+              resendAt = Date.now() + 60000;
+              mode = 'verify';
+              paint();
+            } else {
+              loggedIn(await K.api(`/auth/${mode}`, { method: 'POST', body }));
+            }
+          } else if (f.id === 'vf') {
+            btn.disabled = true;
+            loggedIn(await K.api('/auth/register/verify', { method: 'POST', body: { pending, code: field('code') } }));
+          } else if (f.id === 'ff') {
+            if (!field('captcha')) {
+              err.textContent = 'Resimdeki güvenlik kodunu yaz.';
+              return;
+            }
+            btn.disabled = true;
+            const r = await K.api('/auth/forgot', { method: 'POST', body: { email: field('email'), captcha: field('captcha') } });
+            pending = r.pending;
+            pendingEmail = r.email;
+            mode = 'reset';
+            paint();
+          } else if (f.id === 'rf') {
+            btn.disabled = true;
+            loggedIn(await K.api('/auth/reset', { method: 'POST', body: { pending, code: field('code'), password: field('password') } }));
+          }
+        } catch (ex) {
+          if (f.id === 'af' && mode === 'login' && (ex.code === 'NEEDCAPTCHA' || ex.code === 'CAPTCHA') && !needCaptcha) {
+            needCaptcha = true;
+            if (!$('#capbox', v)) $('#aerr', v).insertAdjacentHTML('beforebegin', captchaHTML());
+            loadCaptcha();
+            err.textContent = ex.code === 'NEEDCAPTCHA' ? ex.message + ' Güvenlik için resimdeki kodu da yaz.' : ex.message;
+            btn.disabled = false;
+          } else {
+            fail(ex);
+          }
         }
       });
+      return () => clearInterval(timer);
     },
     { auth: false, guest: true, hideNav: true }
   );

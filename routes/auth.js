@@ -11,6 +11,8 @@ const { ensureCsrf, authLimiter, requireAuth } = require('../lib/middleware');
 const social = require('../lib/purge');
 const security = require('../lib/security');
 const moderation = require('../lib/moderation');
+const captcha = require('../lib/captcha');
+const emailcode = require('../lib/emailcode');
 
 const router = express.Router();
 
@@ -50,75 +52,202 @@ router.get(
         announcement: settings.announcement ? settings.announcement.text : '',
         maintenance: settings.maintenance,
         googleClientId: cfg.GOOGLE_CLIENT_ID || '',
+        emailVerify: emailcode.enabled(),
+        emailDomains: cfg.ALLOWED_EMAIL_DOMAINS,
       },
     });
   })
 );
 
+// Captcha resmi (SVG). Her istekte yeni kod üretilir; cevap oturumda özet olarak tutulur.
+router.get(
+  '/captcha',
+  wrap(async (req, res) => {
+    const svg = captcha.generate(req);
+    res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(svg);
+  })
+);
+
+function requireCaptcha(req) {
+  if (!captcha.check(req, (req.body || {}).captcha)) {
+    throw new HttpError(400, 'Güvenlik kodu yanlış ya da süresi dolmuş. Resmi yenileyip tekrar yaz.', 'CAPTCHA');
+  }
+}
+
+// Kayıt bilgilerini doğrular (kullanıcı adı, görünen ad, şifre, yönetici adı, IP yasağı/sınırı)
+async function validateSignup(req, body) {
+  const username = clean(body.username, 30).toLowerCase();
+  let nickname = clean(body.nickname, 30);
+  const password = typeof body.password === 'string' ? body.password : '';
+  if (!isValidUsername(username)) {
+    throw new HttpError(400, 'Kullanıcı adı 3-24 karakter olmalı; yalnızca harf, rakam, nokta ve alt çizgi kullanabilirsin.');
+  }
+  if (!nickname) nickname = username;
+  security.checkPassword(password, username);
+  await moderation.assertClean(username, 'Kullanıcı adı');
+  await moderation.assertClean(nickname, 'Görünen ad');
+
+  let role = 'user';
+  if (cfg.ADMIN_USERNAMES.includes(username)) {
+    // ADMIN_USERNAMES listesindeki ad, ilk kaydolan kişiye yönetici yetkisiyle verilir (başka kod istenmez).
+    // Ad alındıktan sonra kimse aynı adla kayıt olamaz; bu yüzden yönetici hesabını ilk iş sen aç.
+    role = 'admin';
+  } else if (RESERVED_USERNAMES.has(username)) {
+    throw new HttpError(400, 'Bu kullanıcı adı kullanılamaz.');
+  }
+  if (await cols.users.findOne({ username }, { projection: { _id: 1 } })) throw new HttpError(409, 'Bu kullanıcı adı zaten alınmış.');
+  // IP yasağı ve ağ başına hesap sınırı (ilk yönetici hesabı için uygulanmaz)
+  if (role !== 'admin') {
+    await security.assertIpAllowed(req);
+    await security.assertAccountQuota(req);
+  }
+  return { username, nickname, password, role, accountType: accountTypeOf(body.accountType) };
+}
+
+async function createUser(req, s, extra) {
+  const ipHash = security.ipHashOf(req);
+  const user = {
+    username: s.username,
+    nickname: s.nickname,
+    password: s.passwordHash,
+    bio: '',
+    link: '',
+    avatar: '',
+    banner: '',
+    verified: false,
+    role: s.role,
+    banned: false,
+    accountType: s.accountType,
+    regIpHash: ipHash,
+    lastIpHash: ipHash,
+    isPrivate: false,
+    hideVisitors: false,
+    restrictedMode: false,
+    showLikes: false,
+    theme: 'dark',
+    allowMessages: 'everyone',
+    createdAt: new Date(),
+    lastActive: new Date(),
+    ...(extra || {}),
+  };
+  try {
+    const r = await cols.users.insertOne(user);
+    user._id = r.insertedId;
+  } catch (e) {
+    if (e.code === 11000) {
+      const f = JSON.stringify(e.keyPattern || e.keyValue || {});
+      throw new HttpError(409, /email/i.test(f) ? 'Bu e-posta ile zaten bir hesap var.' : 'Bu kullanıcı adı zaten alınmış.');
+    }
+    throw e;
+  }
+  return user;
+}
+
+// E-posta doğrulaması kapalıyken (sağlayıcı ayarlı değil) kullanılan doğrudan kayıt; captcha yine gerekir
 router.post(
   '/register',
   authLimiter,
   wrap(async (req, res) => {
+    if (emailcode.enabled()) throw new HttpError(400, 'Kayıt için e-posta doğrulaması gerekli.', 'EMAIL_REQUIRED');
     const body = req.body || {};
-    const username = clean(body.username, 30).toLowerCase();
-    let nickname = clean(body.nickname, 30);
-    const password = typeof body.password === 'string' ? body.password : '';
+    requireCaptcha(req);
+    const s = await validateSignup(req, body);
+    s.passwordHash = await bcrypt.hash(s.password, 10);
+    const user = await createUser(req, s);
+    const csrfToken = await startSession(req, user);
+    res.json({ user: presentMe(user), csrf: csrfToken });
+  })
+);
 
-    if (!isValidUsername(username)) {
-      throw new HttpError(400, 'Kullanıcı adı 3-24 karakter olmalı; yalnızca harf, rakam, nokta ve alt çizgi kullanabilirsin.');
+// 1. adım: bilgileri doğrula, e-postaya 6 haneli kod gönder
+router.post(
+  '/register/start',
+  authLimiter,
+  wrap(async (req, res) => {
+    if (!emailcode.enabled()) throw new HttpError(400, 'E-posta doğrulaması bu sunucuda kapalı.');
+    const body = req.body || {};
+    requireCaptcha(req);
+    const s = await validateSignup(req, body);
+    const { email, key } = emailcode.parseEmail(body.email);
+    if (await cols.users.findOne({ emailKey: key }, { projection: { _id: 1 } })) {
+      throw new HttpError(409, 'Bu e-posta ile zaten bir hesap var. Giriş yap ya da şifreni sıfırla.');
     }
-    if (!nickname) nickname = username;
-    security.checkPassword(password, username);
-    await moderation.assertClean(username, 'Kullanıcı adı');
-    await moderation.assertClean(nickname, 'Görünen ad');
+    const pending = await emailcode.start({
+      purpose: 'signup',
+      email,
+      key,
+      ipHash: security.ipHashOf(req),
+      data: { username: s.username, nickname: s.nickname, passwordHash: await bcrypt.hash(s.password, 10), accountType: s.accountType, role: s.role },
+    });
+    res.json({ pending, email: emailcode.mask(email) });
+  })
+);
 
-    let role = 'user';
-    if (cfg.ADMIN_USERNAMES.includes(username)) {
-      // ADMIN_USERNAMES listesindeki ad, ilk kaydolan kişiye yönetici yetkisiyle verilir (başka kod istenmez).
-      // Ad alındıktan sonra kimse aynı adla kayıt olamaz; bu yüzden yönetici hesabını ilk iş sen aç.
-      role = 'admin';
-    } else if (RESERVED_USERNAMES.has(username)) {
-      throw new HttpError(400, 'Bu kullanıcı adı kullanılamaz.');
-    }
+router.post(
+  '/register/resend',
+  authLimiter,
+  wrap(async (req, res) => {
+    const email = await emailcode.resend((req.body || {}).pending, 'signup');
+    res.json({ ok: true, email: emailcode.mask(email) });
+  })
+);
 
-    // IP yasağı ve ağ başına hesap sınırı (ilk yönetici hesabı için uygulanmaz)
-    if (role !== 'admin') {
+// 2. adım: kodu doğrula, hesabı oluştur ve giriş yap
+router.post(
+  '/register/verify',
+  authLimiter,
+  wrap(async (req, res) => {
+    const doc = await emailcode.consume((req.body || {}).pending, 'signup', (req.body || {}).code);
+    const d = doc.data || {};
+    if (d.role !== 'admin') {
       await security.assertIpAllowed(req);
       await security.assertAccountQuota(req);
     }
-
-    const ipHash = security.ipHashOf(req);
-    const user = {
-      username,
-      nickname,
-      password: await bcrypt.hash(password, 10),
-      bio: '',
-      link: '',
-      avatar: '',
-      banner: '',
-      verified: false,
-      role,
-      banned: false,
-      accountType: accountTypeOf(body.accountType),
-      regIpHash: ipHash,
-      lastIpHash: ipHash,
-      isPrivate: false,
-      hideVisitors: false,
-      restrictedMode: false,
-      showLikes: false,
-      theme: 'dark',
-      allowMessages: 'everyone',
-      createdAt: new Date(),
-      lastActive: new Date(),
-    };
-    try {
-      const r = await cols.users.insertOne(user);
-      user._id = r.insertedId;
-    } catch (e) {
-      if (e.code === 11000) throw new HttpError(409, 'Bu kullanıcı adı zaten alınmış.');
-      throw e;
-    }
+    const user = await createUser(req, { ...d }, { email: doc.email, emailKey: doc.emailKey, emailVerified: true });
     const csrfToken = await startSession(req, user);
+    delete user.password;
+    res.json({ user: presentMe(user), csrf: csrfToken });
+  })
+);
+
+// Şifremi unuttum: kayıtlı e-postaya kod gönderir. Adres kayıtlı olmasa da aynı cevap verilir (hesap var mı yok mu sızdırılmaz).
+router.post(
+  '/forgot',
+  authLimiter,
+  wrap(async (req, res) => {
+    if (!emailcode.enabled()) throw new HttpError(400, 'E-posta doğrulaması bu sunucuda kapalı; şifre sıfırlama yapılamıyor.');
+    requireCaptcha(req);
+    const { email, key } = emailcode.parseEmail((req.body || {}).email);
+    const user = await cols.users.findOne({ emailKey: key }, { projection: { _id: 1, banned: 1 } });
+    let pending;
+    if (user && !user.banned) {
+      pending = await emailcode.start({ purpose: 'reset', email, key, userId: user._id, ipHash: security.ipHashOf(req) });
+    } else {
+      pending = crypto.randomBytes(12).toString('hex'); // sahte kimlik: adres kayıtlı değilmiş gibi görünmesin
+    }
+    res.json({ pending, email: emailcode.mask(email) });
+  })
+);
+
+router.post(
+  '/reset',
+  authLimiter,
+  wrap(async (req, res) => {
+    const body = req.body || {};
+    const doc = await emailcode.consume(body.pending, 'reset', body.code);
+    const user = await cols.users.findOne({ _id: doc.userId });
+    if (!user) throw new HttpError(400, 'Hesap bulunamadı.');
+    security.checkPassword(body.password, user.username);
+    await cols.users.updateOne(
+      { _id: user._id },
+      { $set: { password: await bcrypt.hash(body.password, 10), noPassword: false, failCount: 0 }, $unset: { lockUntil: '' } }
+    );
+    await security.killSessions(user._id);
+    if (await security.refreshBan(user)) throw new HttpError(403, security.banMessage(user), 'BANNED');
+    const csrfToken = await startSession(req, user);
+    delete user.password;
     res.json({ user: presentMe(user), csrf: csrfToken });
   })
 );
@@ -128,9 +257,17 @@ router.post(
   authLimiter,
   wrap(async (req, res) => {
     const body = req.body || {};
-    const username = clean(body.username, 30).toLowerCase();
+    const ident = clean(body.username, 254).toLowerCase();
     const password = typeof body.password === 'string' ? body.password : '';
-    const user = username ? await cols.users.findOne({ username }) : null;
+    // 3 hatalı denemeden sonra captcha istenir (bu oturumda)
+    if ((req.session.loginFails || 0) >= 3) requireCaptcha(req);
+    let user = null;
+    if (ident.includes('@')) {
+      const key = emailcode.tryKey(ident);
+      user = key ? await cols.users.findOne({ emailKey: key }) : null;
+    } else if (ident) {
+      user = await cols.users.findOne({ username: ident.slice(0, 30) });
+    }
 
     if (user && user.lockUntil && new Date(user.lockUntil).getTime() > Date.now()) {
       const mins = Math.ceil((new Date(user.lockUntil).getTime() - Date.now()) / 60000);
@@ -138,13 +275,14 @@ router.post(
     }
     const ok = await bcrypt.compare(password, user && !user.noPassword ? user.password : DUMMY_HASH);
     if (!user || !ok) {
+      req.session.loginFails = (req.session.loginFails || 0) + 1;
       if (user) {
         const fails = (user.failCount || 0) + 1;
         const set = fails >= MAX_FAILS ? { failCount: 0, lockUntil: new Date(Date.now() + LOCK_MS) } : { failCount: fails };
         await cols.users.updateOne({ _id: user._id }, { $set: set });
       }
       if (user && user.noPassword) throw new HttpError(401, 'Bu hesap Google ile açılmış. "Google ile devam et" düğmesini kullan.');
-      throw new HttpError(401, 'Kullanıcı adı veya şifre hatalı.');
+      throw new HttpError(401, 'Kullanıcı adı / e-posta veya şifre hatalı.', req.session.loginFails >= 3 ? 'NEEDCAPTCHA' : undefined);
     }
     if (await security.refreshBan(user)) throw new HttpError(403, security.banMessage(user), 'BANNED');
     const ipHash = security.ipHashOf(req);
@@ -172,6 +310,17 @@ async function googleUser(req, g, accountType) {
     if (await security.refreshBan(user)) throw new HttpError(403, security.banMessage(user), 'BANNED');
     return user;
   }
+  // Aynı (Google tarafından doğrulanmış) e-postayla açılmış hesap varsa ona bağla
+  const emailKey = emailcode.tryKey(g.email);
+  if (emailKey) {
+    const byMail = await cols.users.findOne({ emailKey }, { projection: { password: 0 } });
+    if (byMail) {
+      if (await security.refreshBan(byMail)) throw new HttpError(403, security.banMessage(byMail), 'BANNED');
+      await cols.users.updateOne({ _id: byMail._id }, { $set: { googleId: g.sub, googleEmail: g.email, emailVerified: true } });
+      byMail.googleId = g.sub;
+      return byMail;
+    }
+  }
   await security.assertIpAllowed(req);
   await security.assertAccountQuota(req);
   const ipHash = security.ipHashOf(req);
@@ -189,6 +338,9 @@ async function googleUser(req, g, accountType) {
       usernameAuto: true,
       googleId: g.sub,
       googleEmail: g.email,
+      email: g.email,
+      emailVerified: true,
+      ...(emailKey ? { emailKey } : {}),
       bio: '', link: '', avatar: '', banner: '',
       verified: false, role: 'user', banned: false,
       accountType: accountTypeOf(accountType),

@@ -6,13 +6,16 @@
 
   K.muted = K.store.get('muted', '0') === '1';
   K.speed = Number(K.store.get('speed', '1')) || 1;
+  K.auto = K.store.get('auto', '0') === '1';
 
   const VIS_LABEL = { followers: ['users', 'Yalnızca takipçiler'], private: ['lock', 'Yalnızca ben'] };
 
   function reelHTML(v, i) {
     const vis = VIS_LABEL[v.visibility];
-    return `<section class="reel" data-id="${esc(v.id)}" data-i="${i}">
-      <video playsinline loop webkit-playsinline preload="none" ${v.posterUrl ? `poster="${esc(v.posterUrl)}"` : ''} ${K.muted ? 'muted' : ''}></video>
+    const fcss = v.filter ? K.fx.filterCss(v.filter) : '';
+    return `<section class="reel${v.duet ? ' duet' : ''}" data-id="${esc(v.id)}" data-i="${i}">
+      <video playsinline loop webkit-playsinline preload="none" ${v.posterUrl ? `poster="${esc(v.posterUrl)}"` : ''} ${K.muted ? 'muted' : ''}${fcss ? ` style="filter:${fcss}"` : ''}></video>
+      ${v.duet ? `<video class="duet-orig" playsinline loop webkit-playsinline preload="none" ${v.duet.posterUrl ? `poster="${esc(v.duet.posterUrl)}"` : ''} ${K.muted ? 'muted' : ''}></video>` : ''}
       ${K.fx.layerHTML(v.overlays)}
       <div class="shade"></div><div class="tap" data-tap></div>
       <div class="pause-ind">${icon('play')}</div>
@@ -20,6 +23,7 @@
       <div class="info">
         ${vis && v.mine ? `<span class="vis-tag">${icon(vis[0], 'sm')} ${vis[1]}</span>` : ''}
         <a class="who" href="#/u/${esc(v.user.username)}">@${esc(v.user.username)}${v.user.verified ? K.verifiedBadge() : ''}<span style="font-weight:400;opacity:.8;font-size:13px">· ${K.timeAgo(v.createdAt)}</span></a>
+        ${v.duet ? `<a class="duet-tag" href="#/u/${esc(v.duet.user.username)}">${icon('video', 'sm')} Düet · @${esc(v.duet.user.username)}</a>` : ''}
         ${v.caption ? `<div class="cap" data-act="cap">${K.linkify(v.caption)}</div>` : ''}
         ${v.sound && v.sound.id ? `<a class="song" href="#/sound/${esc(v.sound.id)}">${icon('music', 'sm')}<span>${esc(v.song)}</span></a>` : `<div class="song">${icon('music', 'sm')}<span>${esc(v.song)}</span></div>`}
       </div>
@@ -73,13 +77,23 @@
       const vid = $('video', reel);
       const v = itemOf(reel.dataset.id);
       if (!v) return;
+      const orig = $('.duet-orig', reel);
       if (on && !vid.getAttribute('src')) {
         vid.src = v.mediaUrl;
         vid.preload = 'auto';
+        if (orig && v.duet) {
+          orig.src = v.duet.mediaUrl;
+          orig.preload = 'auto';
+        }
       } else if (!on && vid.getAttribute('src')) {
         vid.pause();
         vid.removeAttribute('src');
         vid.load();
+        if (orig) {
+          orig.pause();
+          orig.removeAttribute('src');
+          orig.load();
+        }
       }
     }
 
@@ -91,6 +105,8 @@
         const vid = $('video', r);
         if (i !== index) {
           vid.pause();
+          const o = $('.duet-orig', r);
+          if (o) o.pause();
           r.classList.remove('playing', 'paused', 'muted-hint');
         }
       });
@@ -104,11 +120,22 @@
         st.sfx.destroy();
         st.sfx = null;
       }
+      if (st.dsync) {
+        st.dsync.destroy();
+        st.dsync = null;
+      }
       vid.muted = K.muted;
       vid.currentTime = 0;
       vid.playbackRate = K.speed || 1;
       const item = itemOf(reel.dataset.id);
       if (item && item.sound && item.sound.url) st.sfx = K.fx.sound(vid, item.sound);
+      const orig = $('.duet-orig', reel);
+      if (orig && item && item.duet) st.dsync = K.fx.duetSync(vid, orig);
+      // otomatik kaydır: açıkken video tekrar etmez, bitince sıradakine geçilir
+      vid.loop = !K.auto;
+      vid.onended = () => {
+        if (K.auto && st.active === index && !st.dead) goNext();
+      };
       const p = vid.play();
       reel.classList.add('playing');
       reel.classList.remove('paused');
@@ -239,6 +266,11 @@
     let lastTap = 0;
     let tapTimer = null;
     K.on(feed, 'click', '[data-tap]', (el, ev) => {
+      if (Date.now() - suppressTap < 700) return; // basılı tutma sonrası gelen tıklamayı yoksay
+      if (document.body.classList.contains('clean-ui')) {
+        document.body.classList.remove('clean-ui');
+        return;
+      }
       const reel = el.closest('.reel');
       const v = itemOf(reel.dataset.id);
       const now = Date.now();
@@ -255,6 +287,40 @@
           togglePause(reel);
         }, 260);
       }
+    });
+
+    function goNext() {
+      const reels = $$('.reel', feed);
+      const n = reels[st.active + 1];
+      if (n) n.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // Temiz ekran: videoya basılı tut → arayüz kaybolur; dokununca geri gelir
+    let pressTimer = null;
+    let suppressTap = 0;
+    feed.addEventListener('pointerdown', (e) => {
+      if (!e.target.closest('[data-tap]')) return;
+      clearTimeout(pressTimer);
+      const sx = e.clientX;
+      const sy = e.clientY;
+      const cancel = () => {
+        clearTimeout(pressTimer);
+        feed.removeEventListener('pointermove', mv);
+        feed.removeEventListener('pointerup', cancel);
+        feed.removeEventListener('pointercancel', cancel);
+      };
+      const mv = (ev) => {
+        if (Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) > 12) cancel();
+      };
+      pressTimer = setTimeout(() => {
+        suppressTap = Date.now();
+        document.body.classList.add('clean-ui');
+        if (navigator.vibrate) navigator.vibrate(15);
+        K.toast('Temiz ekran · çıkmak için dokun');
+      }, 550);
+      feed.addEventListener('pointermove', mv);
+      feed.addEventListener('pointerup', cancel);
+      feed.addEventListener('pointercancel', cancel);
     });
 
     function hideReel(v) {
@@ -296,6 +362,13 @@
             if (act) act.playbackRate = s;
           },
           onHide: () => hideReel(v),
+          onAuto: () => {
+            K.auto = !K.auto;
+            K.store.set('auto', K.auto ? '1' : '0');
+            const cur = $$('.reel video:not(.duet-orig)', feed)[st.active];
+            if (cur) cur.loop = !K.auto;
+            K.toast(K.auto ? 'Otomatik kaydırma açık' : 'Otomatik kaydırma kapalı');
+          },
           onUpdate: (nv) => {
             Object.assign(v, nv);
             const r = reelEl(v.id);
@@ -429,6 +502,8 @@
         st.dead = true;
         clearTimeout(viewTimer);
         if (st.sfx) st.sfx.destroy();
+        if (st.dsync) st.dsync.destroy();
+        document.body.classList.remove('clean-ui');
         io && io.disconnect();
         document.removeEventListener('keydown', onKey);
         document.removeEventListener('visibilitychange', onVis);
@@ -451,10 +526,12 @@
   /* ---------------- ana sayfa ---------------- */
   const TABS = [
     ['following', 'Takip'],
+    ['friends', 'Arkadaşlar'],
     ['foryou', 'Sizin için'],
     ['new', 'Yeni'],
   ];
   const EMPTY = {
+    friends: `<div class="col" style="align-items:center">${icon('users', 'lg')}<b style="font-size:18px">Arkadaşların burada</b><span style="opacity:.75">Karşılıklı takipleştiğin kişilerin videoları görünür</span><a class="btn primary" href="#/search" style="margin-top:10px">Kişi bul</a></div>`,
     following: `<div class="col" style="align-items:center">${icon('users', 'lg')}<b style="font-size:18px">Takip ettiklerinin videoları burada</b><span style="opacity:.75">Henüz kimseyi takip etmiyorsun ya da yeni video yok.</span><a class="btn primary" href="#/discover">Kişileri keşfet</a></div>`,
     foryou: `<div class="col" style="align-items:center">${icon('video', 'lg')}<b style="font-size:18px">Henüz video yok</b><span style="opacity:.75">İlk videoyu sen yükle!</span><a class="btn primary" href="#/upload">Video yükle</a></div>`,
     new: `<div class="col" style="align-items:center">${icon('video', 'lg')}<b style="font-size:18px">Henüz yeni video yok</b></div>`,

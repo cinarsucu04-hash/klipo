@@ -8,6 +8,9 @@ const {
 } = require('../lib/services');
 const { purgeVideo, purgeComment } = require('../lib/purge');
 const security = require('../lib/security');
+const storage = require('../lib/storage');
+const storagetools = require('../lib/storagetools');
+const s3 = require('../lib/s3');
 
 const router = express.Router();
 
@@ -83,7 +86,15 @@ router.get(
       return out;
     };
 
+    let store = null;
+    try {
+      const u = await storage.dbUsage();
+      store = { pct: u.pct, full: u.full, backend: storage.activeBackend() };
+    } catch (e) {
+      store = null;
+    }
     res.json({
+      storage: store,
       totals: { users, videos, comments, openReports, activeStories, banned },
       last24h: { newUsers, newVideos, activeUsers: active24h },
       daily: { users: await series(cols.users), videos: await series(cols.videos) },
@@ -484,5 +495,50 @@ router.post(
     res.json({ maxPerIp: s.maxPerIp || 0, badWords: s.badWords || [] });
   })
 );
+
+// ---------------------------------------------------------------- DEPOLAMA
+// Hiçbir uç nokta hesap/video silmez. Günlük kaydı en iyi çabayla yazılır (depo doluyken yazma başarısız olabilir).
+const softLog = (user, action, detail) => logAdmin(user, action, detail).catch(() => {});
+
+router.get(
+  '/storage',
+  wrap(async (req, res) => {
+    res.json(await storagetools.getStats());
+  })
+);
+
+router.post(
+  '/storage/test',
+  wrap(async (req, res) => {
+    try {
+      const r = await s3.selfTest();
+      res.json({ ok: true, ...r });
+    } catch (e) {
+      res.json({ ok: false, error: e.message });
+    }
+  })
+);
+
+router.post(
+  '/storage/job',
+  wrap(async (req, res) => {
+    const mode = String((req.body || {}).mode || '');
+    if (mode === 'free' && String((req.body || {}).confirm || '').trim().toUpperCase() !== 'EVET') {
+      throw new HttpError(400, 'Onay için EVET yaz.');
+    }
+    let st;
+    try {
+      st = storagetools.start(mode);
+    } catch (e) {
+      throw new HttpError(e.status || 400, e.message);
+    }
+    await softLog(req.user, 'Depolama işi başladı', mode);
+    res.json(st);
+  })
+);
+
+router.get('/storage/job', wrap(async (req, res) => res.json(storagetools.jobStatus())));
+
+router.post('/storage/job/stop', wrap(async (req, res) => res.json(storagetools.stop())));
 
 module.exports = router;

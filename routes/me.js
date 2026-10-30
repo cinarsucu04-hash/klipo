@@ -188,4 +188,57 @@ router.get(
   })
 );
 
+// Yaratıcı analitiği: toplamlar, son 7 gün ve en çok izlenen videolar
+router.get(
+  '/analytics',
+  wrap(async (req, res) => {
+    const me = req.user;
+    const DAY = 86400000;
+    const since = new Date(Date.now() - 7 * DAY);
+    const vids = await cols.videos
+      .find({ userId: me._id, removed: { $ne: true } }, { projection: { posterUrl: 1, caption: 1, views: 1, likes: 1, comments: 1, shares: 1, saves: 1, createdAt: 1 } })
+      .toArray();
+    const ids = vids.map((v) => v._id);
+    const sum = (k) => vids.reduce((n, v) => n + (v[k] || 0), 0);
+
+    const byDay = (col, match, field) =>
+      col
+        .aggregate([
+          { $match: match },
+          { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$' + field, timezone: '+03:00' } }, n: { $sum: 1 } } },
+        ])
+        .toArray();
+    const [likeDays, commentDays, followDays, visitDays, followers] = await Promise.all([
+      ids.length ? byDay(cols.likes, { videoId: { $in: ids }, userId: { $ne: me._id }, createdAt: { $gte: since } }, 'createdAt') : [],
+      ids.length ? byDay(cols.comments, { videoId: { $in: ids }, userId: { $ne: me._id }, createdAt: { $gte: since } }, 'createdAt') : [],
+      byDay(cols.follows, { followingId: me._id, createdAt: { $gte: since } }, 'createdAt'),
+      byDay(cols.visitors, { profileId: me._id, visitedAt: { $gte: since } }, 'visitedAt'),
+      cols.follows.countDocuments({ followingId: me._id }),
+    ]);
+    const pick = (rows) => new Map(rows.map((r) => [r._id, r.n]));
+    const L = pick(likeDays), C = pick(commentDays), F = pick(followDays), V = pick(visitDays);
+    const daily = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(Date.now() - i * DAY + 3 * 3600e3).toISOString().slice(0, 10);
+      daily.push({ d, likes: L.get(d) || 0, comments: C.get(d) || 0, followers: F.get(d) || 0, visitors: V.get(d) || 0 });
+    }
+    const top = vids
+      .slice()
+      .sort((a, b) => (b.views || 0) - (a.views || 0))
+      .slice(0, 5)
+      .map((v) => ({ id: sid(v._id), posterUrl: v.posterUrl || '', caption: v.caption || '', views: v.views || 0, likes: v.likes || 0, comments: v.comments || 0 }));
+    res.json({
+      totals: { videos: vids.length, views: sum('views'), likes: sum('likes'), comments: sum('comments'), shares: sum('shares'), saves: sum('saves'), followers },
+      last7: {
+        likes: daily.reduce((n, x) => n + x.likes, 0),
+        comments: daily.reduce((n, x) => n + x.comments, 0),
+        followers: daily.reduce((n, x) => n + x.followers, 0),
+        visitors: daily.reduce((n, x) => n + x.visitors, 0),
+      },
+      daily,
+      top,
+    });
+  })
+);
+
 module.exports = router;

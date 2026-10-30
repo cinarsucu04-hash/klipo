@@ -43,6 +43,7 @@
           <button class="menu-item" data-theme>${icon('sun')}<span>Tema</span><span class="end">${THEME_LABEL[m.settings.theme] || 'Koyu'}</span></button>
           <div class="section-title">Etkinlik</div>
           ${link('#/requests', 'user-plus', 'Takip istekleri', K.counters.requests ? K.counters.requests : '')}
+          ${link('#/analytics', 'star', 'Yaratıcı analizi')}
           ${link('#/visitors', 'eye', 'Profilime bakanlar')}
           ${link('#/history', 'clock', 'İzleme geçmişi')}
           ${link('#/blocked', 'ban', 'Engellenen hesaplar')}

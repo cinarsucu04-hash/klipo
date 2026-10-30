@@ -1,8 +1,8 @@
 /* Klipo service worker: kabuğu (HTML/CSS/JS) çevrimdışı açar. API ve medya asla önbelleğe alınmaz. */
-const CACHE = 'klipo-shell-v2';
-const SHELL = ['/', '/css/app.css', '/js/theme.js', '/js/core.js', '/js/components.js', '/js/fx.js', '/js/push.js', '/js/view-feed.js',
+const CACHE = 'klipo-shell-v3';
+const SHELL = ['/', '/css/app.css', '/js/theme.js', '/js/core.js', '/js/components.js', '/js/fx.js', '/js/push.js', '/js/google.js', '/js/view-feed.js',
   '/js/view-explore.js', '/js/view-upload.js', '/js/view-inbox.js', '/js/view-profile.js', '/js/view-settings.js',
-  '/js/view-admin.js', '/js/app.js', '/icons/icon-192.png', '/offline.html'];
+  '/js/view-analytics.js', '/js/view-admin.js', '/js/app.js', '/icons/icon-192.png', '/offline.html'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

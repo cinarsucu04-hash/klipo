@@ -4,7 +4,7 @@
   const K = window.K;
   const { esc, icon, $, $$ } = K;
 
-  const TABS = [['stats', 'Genel'], ['reports', 'Şikayetler'], ['users', 'Kullanıcılar'], ['videos', 'Videolar'], ['safety', 'Güvenlik'], ['system', 'Sistem']];
+  const TABS = [['stats', 'Genel'], ['reports', 'Şikayetler'], ['users', 'Kullanıcılar'], ['videos', 'Videolar'], ['safety', 'Güvenlik'], ['storage', 'Depolama'], ['system', 'Sistem']];
 
   K.route(
     '/admin',
@@ -23,7 +23,7 @@
         show();
       });
 
-      const views = { stats, reports, users, videos, safety, system };
+      const views = { stats, reports, users, videos, safety, storage, system };
       function show() {
         body.innerHTML = K.spinner();
         views[tab]().catch((e) => (body.innerHTML = K.empty('refresh', 'Yüklenemedi', e.message)));
@@ -38,12 +38,134 @@
           const max = Math.max(1, ...rows.map((r) => r.n));
           return `<div class="section-title">${title}</div><div class="mini-chart">${rows.map((r) => `<div title="${esc(r.day)}: ${r.n}"><span>${r.n}</span><i style="height:${Math.max(3, (r.n / max) * 100)}%"></i><span>${esc(r.day.slice(8))}</span></div>`).join('')}</div>`;
         };
-        body.innerHTML = `<div class="stat-grid">
+        const st = d.storage && d.storage.pct >= 70
+          ? `<div class="card warnbox"><b>${d.storage.full ? 'Depolama dolu' : 'Depolama doluyor'} · %${d.storage.pct}</b><p class="hint" style="margin:4px 0 10px">${d.storage.full && d.storage.backend === 'gridfs' ? 'Yeni video yüklemeleri durduruldu; mevcut içerik güvende.' : 'Dolmadan önce dış depoya geçmeni öneririm.'}</p><button class="btn sm primary" data-gost>Depolama ayarlarına git</button></div>`
+          : '';
+        body.innerHTML = `${st}<div class="stat-grid">
             ${[['Kullanıcı', t.users], ['Video', t.videos], ['Yorum', t.comments], ['Açık şikayet', t.openReports], ['Aktif hikaye', t.activeStories], ['Askıda', t.banned]].map((s) => `<div class="stat"><b>${K.count(s[1])}</b><span>${s[0]}</span></div>`).join('')}</div>
           <div class="section-title">Son 24 saat</div>
           <div class="stat-grid">${[['Yeni üye', d.last24h.newUsers], ['Yeni video', d.last24h.newVideos], ['Aktif kullanıcı', d.last24h.activeUsers]].map((s) => `<div class="stat"><b>${s[1]}</b><span>${s[0]}</span></div>`).join('')}</div>
           ${chart('Yeni üyeler (7 gün)', d.daily.users)}${chart('Yeni videolar (7 gün)', d.daily.videos)}
           <div class="card hint" style="margin-top:18px">Sunucu: Node ${esc(d.server.node)} · bellek ${d.server.memoryMB} MB · çalışma süresi ${d.server.uptimeMin} dk · veritabanı ${d.server.db ? 'bağlı' : 'yok'}</div>`;
+      }
+
+      K.on(body, 'click', '[data-gost]', () => $('#atabs [data-t="storage"]', v).click());
+
+      /* ---- depolama ---- */
+      let stTimer = null;
+      async function storage() {
+        clearTimeout(stTimer);
+        const d = await K.api('/admin/storage');
+        if (!ctx.alive() || tab !== 'storage') return;
+        const mb = (b) => {
+          const m = (b || 0) / 1048576;
+          return (m >= 100 ? Math.round(m) : Math.round(m * 10) / 10).toString().replace('.', ',') + ' MB';
+        };
+        const u = d.db;
+        const level = !u ? 'ok' : u.full ? 'bad' : u.pct >= 70 ? 'warn' : 'ok';
+        const where = { s3: 'Dış depo', gridfs: 'MongoDB', disk: 'Disk' }[d.backend] || d.backend;
+        const ex = d.external;
+        const kinds = { video: 'Video', image: 'Görsel', audio: 'Ses' };
+        const jobHTML = (j) => {
+          if (!j || !j.mode) return '';
+          const pct = j.total ? Math.round((j.done / j.total) * 100) : j.running ? 0 : 100;
+          const name = { copy: 'Kopyalama', free: 'MongoDB’de yer açma', orphans: 'Sahipsiz dosya temizliği' }[j.mode];
+          const line = j.mode === 'copy'
+            ? `${j.copied} kopyalandı · ${j.already} zaten vardı · ${j.failed} hata · ${mb(j.bytes)}`
+            : `${j.copied} dosya işlendi (${mb(j.freed)} yer açıldı) · ${j.skipped} atlandı · ${j.failed} hata`;
+          return `<div class="card" id="jobbox"><b>${name} ${j.running ? 'sürüyor…' : j.error ? 'durdu' : 'bitti'}</b>
+            <div class="progress" style="margin:10px 0"><i style="width:${pct}%"></i></div>
+            <p class="hint">${j.done}/${j.total} dosya · ${line}</p>
+            ${j.error ? `<p class="error-text">${esc(j.error)}</p>` : ''}
+            ${j.log && j.log.length ? `<details style="margin-top:8px"><summary class="hint">Kayıt</summary><pre class="logpre">${esc(j.log.join('\n'))}</pre></details>` : ''}
+            ${j.running ? '<button class="btn sm" id="st-stop" style="margin-top:8px">Durdur</button>' : ''}</div>`;
+        };
+        body.innerHTML = `<div class="card gauge ${level}">
+            <div class="row"><b class="grow">MongoDB doluluğu</b><span class="tag-pill ${level === 'bad' ? 'red' : level === 'ok' ? 'green' : ''}">${u ? '%' + u.pct : '—'}</span></div>
+            <div class="progress" style="margin:10px 0"><i style="width:${u ? u.pct : 0}%"></i></div>
+            <p class="hint">${u ? `${mb(u.usedBytes)} / ${mb(u.quotaBytes)} (tahmini)` : 'Ölçülemedi'}</p>
+            <p class="hint" style="margin-top:6px">Yeni yüklemeler: <b>${where}</b>${d.backend === 'gridfs' && u ? (u.full ? ' · <span class="error-text">eşik (%' + u.guardPct + ') aşıldı, yükleme durduruldu</span>' : ' · eşik %' + u.guardPct) : ''}</p>
+            <p class="hint" style="margin-top:6px">Bu ekranda hiçbir hesap, video veya yorum silinmez; videolar yalnızca kopyalanır.</p></div>
+          <div class="stat-grid">
+            <div class="stat"><b>${d.grid.count}</b><span>MongoDB’de dosya · ${mb(d.grid.bytes)}</span></div>
+            <div class="stat"><b>${d.externalCount}</b><span>Dış depoda · ${mb(d.externalBytes)}</span></div>
+            <div class="stat"><b>${d.orphans.count}</b><span>Sahipsiz · ${mb(d.orphans.bytes)}</span></div></div>
+          ${Object.keys(d.media.byKind).length ? `<p class="hint" style="padding:6px 16px 0">${Object.entries(d.media.byKind).map(([k, x]) => `${kinds[k] || k}: ${x.count} (${mb(x.bytes)})`).join(' · ')}</p>` : ''}
+          <div class="card"><b>Dış depo</b>
+            ${ex.configured
+              ? `<p class="hint" style="margin:4px 0 10px">Bağlı: ${esc(ex.info.host)} · kova ${esc(ex.info.bucket)}</p><button class="btn sm" id="st-test">Bağlantıyı dene</button>`
+              : `<p class="hint" style="margin:4px 0 10px">Ayarlı değil. Videolar şu an MongoDB’de duruyor; ücretsiz kota (${u ? mb(u.quotaBytes) : '512 MB'}) dolunca yeni yükleme yapılamaz. Ücretsiz bir S3 uyumlu depo bağlayınca yeni videolar oraya gider, eskiler yerinde kalır.</p>
+                <details><summary class="btn sm">Nasıl bağlanır?</summary><ol class="howto">
+                  <li>Cloudflare <b>R2</b> veya Backblaze <b>B2</b> hesabı aç (ikisinde de ilk 10 GB ücretsiz; kayıtta kart istenebilir).</li>
+                  <li>Bir <b>kova (bucket)</b> oluştur, herkese açık yapma.</li>
+                  <li>Okuma+yazma yetkili bir <b>S3 API anahtarı</b> oluştur; uç nokta adresini, Access Key ID ve Secret’ı kopyala.</li>
+                  <li>Render → servisin <b>Environment</b> bölümüne ekle: <code>S3_ENDPOINT</code>, <code>S3_BUCKET</code>, <code>S3_KEY_ID</code>, <code>S3_SECRET</code> (R2 için ayrıca <code>S3_REGION</code> = <code>auto</code>). Kaydedince Render yeniden başlar.</li>
+                  <li>Buraya dön: <b>Bağlantıyı dene</b> → <b>Kopyala</b> → <b>MongoDB’de yer aç</b>.</li></ol></details>`}</div>
+          ${ex.configured ? `<div class="card"><b>Mevcut videoları taşı</b>
+            <p class="hint" style="margin:4px 0 10px"><b>1 · Kopyala</b>: MongoDB’deki dosyaları dış depoya kopyalar. Hiçbir şey silinmez, uygulama aynen çalışır.</p>
+            <button class="btn sm primary" id="st-copy" ${d.job.running ? 'disabled' : ''}>Kopyala</button>
+            <p class="hint" style="margin:14px 0 10px"><b>2 · Yer aç</b>: kopyası bayt bayt doğrulanan dosyaların MongoDB’deki nüshasını kaldırır. Videolar dış depodan oynamaya devam eder; doğrulanamayan dosyaya dokunulmaz.</p>
+            <button class="btn sm" id="st-free" ${d.job.running ? 'disabled' : ''}>MongoDB’de yer aç</button></div>` : ''}
+          ${d.orphans.count ? `<div class="card"><b>Sahipsiz dosyalar</b><p class="hint" style="margin:4px 0 10px">${d.orphans.count} dosya (${mb(d.orphans.bytes)}) hiçbir videoya/profile bağlı değil (yarım kalan yüklemelerin artığı); 1 saatten eskilerdir.</p><button class="btn sm" id="st-orph" ${d.job.running ? 'disabled' : ''}>Sahipsiz dosyaları temizle</button></div>` : ''}
+          <div id="jobwrap">${jobHTML(d.job)}</div>
+          ${d.collections.length ? `<div class="section-title">En büyük koleksiyonlar</div>${d.collections.map((c) => `<div class="list-item"><span class="grow"><span class="title" style="font-size:14px">${esc(c.name)}</span></span><span class="sub">${c.count} kayıt · ${mb(c.bytes)}</span></div>`).join('')}` : ''}`;
+
+        const startJob = async (mode, extra) => {
+          try {
+            await K.api('/admin/storage/job', { method: 'POST', body: { mode, ...extra } });
+            K.toast('İş başladı', 'ok');
+            storage();
+          } catch (e) {
+            K.fail(e);
+          }
+        };
+        const test = $('#st-test', body);
+        if (test) {
+          test.onclick = async () => {
+            test.disabled = true;
+            try {
+              const r = await K.api('/admin/storage/test', { method: 'POST' });
+              if (r.ok) K.toast(`Bağlantı tamam (${r.ms} ms)`, 'ok');
+              else K.toast(r.error || 'Bağlanılamadı');
+            } catch (e) {
+              K.fail(e);
+            }
+            test.disabled = false;
+          };
+        }
+        const copy = $('#st-copy', body);
+        if (copy) copy.onclick = () => startJob('copy');
+        const free = $('#st-free', body);
+        if (free) {
+          free.onclick = async () => {
+            const a = await K.ask({ title: 'MongoDB’de yer açılsın mı?', text: 'Yalnızca dış depoda bayt bayt doğrulanan videoların MongoDB’deki nüshası kaldırılır; videolar dış depodan oynar. Önce “Kopyala”yı çalıştırmış olmalısın. Onaylamak için EVET yaz.', ok: 'Yer aç', max: 10 });
+            if (a === null) return;
+            if (String(a).trim().toUpperCase() !== 'EVET') return K.toast('Onaylanmadı');
+            startJob('free', { confirm: 'EVET' });
+          };
+        }
+        const orph = $('#st-orph', body);
+        if (orph) {
+          orph.onclick = async () => {
+            if (await K.confirm({ title: 'Sahipsiz dosyalar temizlensin mi?', text: 'Hiçbir videoya/profile bağlı olmayan, 1 saatten eski dosyalar silinir. Hesaplar ve videolar etkilenmez.', ok: 'Temizle', danger: true })) startJob('orphans');
+          };
+        }
+        const poll = async () => {
+          if (!ctx.alive() || tab !== 'storage' || !$('#jobwrap', body)) return;
+          try {
+            const j = await K.api('/admin/storage/job');
+            const w = $('#jobwrap', body);
+            if (!w) return;
+            w.innerHTML = jobHTML(j);
+            const stop = $('#st-stop', body);
+            if (stop) stop.onclick = () => K.api('/admin/storage/job/stop', { method: 'POST' }).catch(K.fail);
+            if (j.running) stTimer = setTimeout(poll, 1500);
+            else storage();
+          } catch (e) { /* ağ kısa süre kesilebilir */ stTimer = setTimeout(poll, 3000); }
+        };
+        const stopBtn = $('#st-stop', body);
+        if (stopBtn) stopBtn.onclick = () => K.api('/admin/storage/job/stop', { method: 'POST' }).catch(K.fail);
+        if (d.job.running) stTimer = setTimeout(poll, 1500);
       }
 
       /* ---- şikayetler ---- */

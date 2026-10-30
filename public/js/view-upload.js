@@ -64,11 +64,25 @@
           if (r.sound) sound = { id: r.sound.id, name: r.sound.name, url: r.sound.url, vol: 0.8, orig: 0.3 };
         } catch (e) { /* ses yoksa boş geç */ }
       }
+      let filter = ''; // video filtresi kimliği (K.fx.FILTERS)
+      let duetOrig = null; // düet yapılan özgün video
+      let dsync = null;
+      if (ctx.query && ctx.query.duet) {
+        try {
+          const r = await K.api(`/videos/${encodeURIComponent(ctx.query.duet)}`);
+          const o = r.video;
+          if (o.visibility !== 'public' || o.allowDuet === false || o.duet || o.mine) throw new Error('Bu videoyla düet yapılamıyor.');
+          duetOrig = o;
+        } catch (e) {
+          K.toast(e.message || 'Düet için video açılamadı', 'error');
+          return K.go('/', true);
+        }
+      }
       let sfx = null;
       const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
       const fmt = (sec) => (sec ? `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}` : '');
 
-      v.innerHTML = `<div class="topbar"><button class="icon-btn" data-back aria-label="Geri">${icon('back')}</button><h1>Video yükle</h1><span class="spacer"></span></div>
+      v.innerHTML = `<div class="topbar"><button class="icon-btn" data-back aria-label="Geri">${icon('back')}</button><h1>${duetOrig ? 'Düet yap' : 'Video yükle'}</h1><span class="spacer"></span></div>
         <div class="page col" id="up"></div>`;
       K.on(v, 'click', '[data-back]', () => K.back('/'));
       const box = $('#up', v);
@@ -112,12 +126,18 @@
           sfx.destroy();
           sfx = null;
         }
-        box.innerHTML = `<div class="editor" id="ed"><video src="${previewUrl}" playsinline muted loop autoplay></video>${K.fx.layerHTML([])}
+        if (dsync) {
+          dsync.destroy();
+          dsync = null;
+        }
+        box.innerHTML = `<div class="editor${duetOrig ? ' duet' : ''}" id="ed"><video src="${previewUrl}" playsinline muted loop autoplay></video>${duetOrig ? `<video class="duet-orig" src="${esc(duetOrig.mediaUrl)}" playsinline muted loop></video>` : ''}${K.fx.layerHTML([])}
             <button class="mute-btn" id="mutebtn" aria-label="Sesi aç/kapat"></button></div>
           <div class="tools">
             <button class="chip" id="addtext"><b>Aa</b> Yazı ekle</button>
             <button class="chip" id="addsound">${icon('music', 'sm')} <span id="sndlbl">Ses ekle</span></button>
           </div>
+          ${duetOrig ? `<div class="hint center" style="margin-top:-4px">Düet · @${esc(duetOrig.user.username)} videosunun yanında oynar</div>` : ''}
+          <div class="chips" id="flt" aria-label="Filtreler">${K.fx.FILTERS.map((f) => `<button class="chip ${f[0] === filter ? 'active' : ''}" data-f="${f[0]}">${f[1]}</button>`).join('')}</div>
           <div class="hint center" style="margin-top:-4px">Yazıyı parmağınla sürükle, düzenlemek için dokun.</div>
           <div class="card sound-card hidden" id="sndcard" style="margin:0"></div>
           <div class="muted center" style="font-size:13px">${esc(file.name)} · ${(file.size / 1048576).toFixed(1)} MB${duration ? ' · ' + Math.round(duration) + ' sn' : ''} <button data-change style="color:var(--brand);font-weight:600;margin-left:6px">Değiştir</button></div>
@@ -128,14 +148,26 @@
             <button data-v="followers" class="${visibility === 'followers' ? 'active' : ''}">Takipçiler</button>
             <button data-v="private" class="${visibility === 'private' ? 'active' : ''}">Yalnızca ben</button></div></div>
           <div class="row"><span class="grow">Yorumlara izin ver</span><button class="switch on" id="allow" aria-label="Yorumlar"></button></div>
+          ${duetOrig ? '' : '<div class="row"><span class="grow">Düete izin ver</span><button class="switch on" id="allowduet" aria-label="Düet"></button></div>'}
+          <div class="row"><span class="grow">Başkaları indirebilsin</span><button class="switch on" id="allowdl" aria-label="İndirme"></button></div>
           <div id="prog" class="hidden"><div class="progress"><i></i></div><div class="hint center" id="progt" style="margin-top:6px"></div></div>
           <button class="btn primary block" id="send">Paylaş</button>`;
         const vid = $('video', box);
         const ed = $('#ed', box);
         const layer = $('.ov-layer', ed);
         vid.play().catch(() => {});
+        vid.style.filter = K.fx.filterCss(filter);
+        if (duetOrig) dsync = K.fx.duetSync(vid, $('.duet-orig', ed));
+        K.on($('#flt', box), 'click', '[data-f]', (b) => {
+          filter = b.dataset.f;
+          vid.style.filter = K.fx.filterCss(filter);
+          $$('#flt .chip', box).forEach((x) => x.classList.toggle('active', x === b));
+        });
         $('#cap', box).addEventListener('input', (e) => ($('#capn', box).textContent = e.target.value.length + ' / 300'));
         $('#allow', box).onclick = (e) => e.currentTarget.classList.toggle('on');
+        $('#allowdl', box).onclick = (e) => e.currentTarget.classList.toggle('on');
+        const adSw = $('#allowduet', box);
+        if (adSw) adSw.onclick = (e) => e.currentTarget.classList.toggle('on');
         $('#send', box).onclick = send;
 
         const muteBtn = $('#mutebtn', box);
@@ -460,6 +492,11 @@
         if (overlays.length) fd.append('overlays', JSON.stringify(overlays));
         fd.append('visibility', visibility);
         fd.append('allowComments', $('#allow', box).classList.contains('on') ? '1' : '0');
+        fd.append('allowDownload', $('#allowdl', box).classList.contains('on') ? '1' : '0');
+        const adSw = $('#allowduet', box);
+        if (adSw) fd.append('allowDuet', adSw.classList.contains('on') ? '1' : '0');
+        if (filter) fd.append('filter', filter);
+        if (duetOrig) fd.append('duetOf', duetOrig.id);
         fd.append('duration', String(Math.round(duration || 0)));
         btn.disabled = true;
         xhrBusy = true;
@@ -489,6 +526,7 @@
       picker();
       return () => {
         if (sfx) sfx.destroy();
+        if (dsync) dsync.destroy();
         if (previewUrl) URL.revokeObjectURL(previewUrl);
       };
     },

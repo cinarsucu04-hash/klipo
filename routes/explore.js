@@ -166,7 +166,7 @@ const NOTIF_FILTERS = {
   likes: ['like', 'comment_like'],
   comments: ['comment', 'reply'],
   follows: ['follow', 'follow_request', 'follow_accepted'],
-  mentions: ['mention'],
+  mentions: ['mention', 'duet'],
 };
 
 router.get(

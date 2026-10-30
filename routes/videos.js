@@ -4,13 +4,13 @@ const { cols } = require('../lib/db');
 const { HttpError, wrap, oid, clean, pageParams, bool } = require('../lib/helpers');
 const { extractHashtags, extractMentions } = require('../lib/text');
 const {
-  sid, userCard, usersById, blockedIds, hydrateVideos, canSeeVideo, publicVideoFilter, notify, logAdmin,
+  sid, userCard, usersById, blockedIds, isBlockedEitherWay, hydrateVideos, canSeeVideo, publicVideoFilter, notify, logAdmin,
 } = require('../lib/services');
 const storage = require('../lib/storage');
 const { uploadLimiter } = require('../lib/middleware');
 const moderation = require('../lib/moderation');
 const { purgeVideo, purgeComment } = require('../lib/purge');
-const { parseOverlays, resolveSound, findBuiltin } = require('../lib/sounds');
+const { parseOverlays, resolveSound, findBuiltin, cleanFilter } = require('../lib/sounds');
 
 const router = express.Router();
 const commentsRouter = express.Router();
@@ -37,7 +37,7 @@ async function notifyMentions(text, actor, videoId, commentId, skipIds) {
 router.get(
   '/feed',
   wrap(async (req, res) => {
-    const type = ['foryou', 'following', 'new'].includes(req.query.type) ? req.query.type : 'foryou';
+    const type = ['foryou', 'following', 'friends', 'new'].includes(req.query.type) ? req.query.type : 'foryou';
     const { skip, limit } = pageParams(req, 8, 20);
     const blocked = await blockedIds(req.user._id);
     const blockedSet = new Set(blocked.map(sid));
@@ -47,6 +47,18 @@ router.get(
     if (type === 'following') {
       const follows = await cols.follows.find({ followerId: req.user._id }, { projection: { followingId: 1 } }).toArray();
       const ids = follows.map((f) => f.followingId).filter((id) => !blockedSet.has(sid(id)));
+      if (!ids.length) return res.json({ videos: [], hasMore: false });
+      const filter = { userId: { $in: ids }, visibility: { $in: ['public', 'followers'] }, removed: { $ne: true } };
+      if (req.user.restrictedMode) filter.sensitive = { $ne: true };
+      list = await cols.videos.find(filter).sort({ createdAt: -1, _id: -1 }).skip(skip).limit(limit + 1).toArray();
+    } else if (type === 'friends') {
+      // arkadaşlar: karşılıklı takipleştiklerin
+      const mine = await cols.follows.find({ followerId: req.user._id }, { projection: { followingId: 1 } }).toArray();
+      const myIds = mine.map((f) => f.followingId).filter((id) => !blockedSet.has(sid(id)));
+      const back = myIds.length
+        ? await cols.follows.find({ followerId: { $in: myIds }, followingId: req.user._id }, { projection: { followerId: 1 } }).toArray()
+        : [];
+      const ids = back.map((f) => f.followerId);
       if (!ids.length) return res.json({ videos: [], hasMore: false });
       const filter = { userId: { $in: ids }, visibility: { $in: ['public', 'followers'] }, removed: { $ne: true } };
       if (req.user.restrictedMode) filter.sensitive = { $ne: true };
@@ -125,6 +137,17 @@ router.post(
     await moderation.enforce(req, [caption, clean(body.song, 60)].concat(overlays.map((o) => o.t)).join(' \n '), 'video');
     const sound = await resolveSound(body.soundId, body.musicVol, body.origVol);
 
+    // düet: orijinal video herkese açık, silinmemiş, düete açık ve kendisi düet olmamalı
+    let duetOf = null;
+    if (body.duetOf) {
+      const orig = await cols.videos.findOne({ _id: oid(body.duetOf, 'Geçersiz düet videosu') });
+      if (!orig || orig.removed || orig.visibility !== 'public' || orig.ownerPrivate) throw new HttpError(404, 'Düet yapılacak video bulunamadı.');
+      if (await isBlockedEitherWay(req.user._id, orig.userId)) throw new HttpError(403, 'Bu videoyla düet yapamazsın.');
+      if (orig.allowDuet === false) throw new HttpError(403, 'Video sahibi düete izin vermiyor.');
+      if (orig.duetOf) throw new HttpError(400, 'Düet videosuyla düet yapılamaz.');
+      duetOf = orig;
+    }
+
     const savedVideo = await storage.save(vf, 'video', 'video');
     let posterUrl = '';
     const pf = req.files.poster && req.files.poster[0];
@@ -149,6 +172,10 @@ router.post(
       visibility,
       ownerPrivate: !!req.user.isPrivate,
       allowComments: bool(body.allowComments, true),
+      allowDuet: bool(body.allowDuet, true),
+      allowDownload: bool(body.allowDownload, true),
+      filter: cleanFilter(body.filter),
+      duetOf: duetOf ? duetOf._id : null,
       sensitive: false,
       featured: false,
       removed: false,
@@ -163,6 +190,7 @@ router.post(
     const r = await cols.videos.insertOne(doc);
     doc._id = r.insertedId;
     if (visibility !== 'private') await notifyMentions(caption, req.user, doc._id, null);
+    if (duetOf && visibility !== 'private') await notify({ userId: duetOf.userId, actorId: req.user._id, type: 'duet', videoId: doc._id });
     const [video] = await hydrateVideos([doc], req.user);
     res.json({ video });
   })
@@ -236,6 +264,8 @@ router.patch(
       set.visibility = req.user.isPrivate && body.visibility === 'public' ? 'followers' : body.visibility;
     }
     if (body.allowComments !== undefined) set.allowComments = bool(body.allowComments, true);
+    if (body.allowDuet !== undefined) set.allowDuet = bool(body.allowDuet, true);
+    if (body.allowDownload !== undefined) set.allowDownload = bool(body.allowDownload, true);
     if (Object.keys(set).length) await cols.videos.updateOne({ _id: v._id }, { $set: set });
     const fresh = await cols.videos.findOne({ _id: v._id });
     const [video] = await hydrateVideos([fresh], req.user);
