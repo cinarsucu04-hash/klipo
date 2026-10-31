@@ -15,6 +15,16 @@ const mw = require('./lib/middleware');
 const security = require('./lib/security');
 const push = require('./lib/push');
 
+// Dış depo adresi (CSP için): herkese açık videolar doğrudan buradan oynatılır
+function storageOrigin() {
+  if (!cfg.S3_ENDPOINT || !cfg.S3_REDIRECT) return [];
+  try {
+    return [new URL(cfg.S3_ENDPOINT).origin];
+  } catch (e) {
+    return [];
+  }
+}
+
 let sessionMw = null; // oturum ara katmanı DB bağlanınca kurulur
 const app = express();
 app.disable('x-powered-by');
@@ -31,7 +41,8 @@ app.use(
         'style-src': ["'self'", "'unsafe-inline'"].concat(cfg.GOOGLE_CLIENT_ID ? ['https://accounts.google.com/gsi/style'] : []),
         'frame-src': cfg.GOOGLE_CLIENT_ID ? ['https://accounts.google.com/gsi/'] : ["'none'"],
         'img-src': ["'self'", 'data:', 'blob:'],
-        'media-src': ["'self'", 'blob:'],
+        // dış depodaki herkese açık videolar imzalı adrese yönlendirilir; o adres de izinli olmalı
+        'media-src': ["'self'", 'blob:'].concat(storageOrigin()),
         'connect-src': ["'self'"].concat(cfg.GOOGLE_CLIENT_ID ? ['https://accounts.google.com/gsi/'] : []),
         'worker-src': ["'self'"],
         'manifest-src': ["'self'"],

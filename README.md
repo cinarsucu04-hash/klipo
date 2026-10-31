@@ -110,6 +110,17 @@ Android SDK ve Gradle indirmeleri bu geliştirme ortamından erişilebilir deği
 - **Yaratıcı analizi:** *Ayarlar → Yaratıcı analizi*: toplam izlenme/beğeni/yorum/paylaşım/takipçi, son 7 günün grafikleri ve en çok izlenen 5 video.
 - Canlı yayın yoktur.
 
+## "Workspace suspended / free bandwidth" (Render bant genişliği)
+
+Render'ın ücretsiz (Hobby) çalışma alanında **giden internet trafiği (bant genişliği) 5 GB/ay** ile sınırlı; aşılırsa çalışma alanı **askıya alınır** ve site hiç açılmaz ("Workspace suspended. You've used the 5 GB of free bandwidth…"). Bu, MongoDB depolamasıyla ilgisizdir. Kısa video akışı en büyük trafik kaynağıdır.
+
+- **Askıdayken ne olur:** Render panelinde servis *Suspended* görünür; yeni dağıtım ve "Rollback" çalışmaz (`could not roll back`). Seçenekler: (a) ay başında ücretsiz hakkın yenilenmesini beklemek (süre için Render'ın Billing/uyarı yazısına bak), (b) uyarıdaki **Remove usage limits** ile kart ekleyip aşan trafiği GB başına ücretle ödemek (güncel fiyatı Render gösterir), (c) başka bir barındırmaya geçmek.
+- **Bu sürümde trafiği azaltan değişiklikler:**
+  - Dış depo (S3) açıkken **herkese açık videolar Render'dan geçmeden doğrudan depodan oynar** (Render yalnızca küçük bir yönlendirme yapar). Kapatmak için `S3_REDIRECT=0`. Özel/takipçilere açık videolar, görseller ve sesler yine Render üzerinden akar.
+  - Ana ekranda artık yalnızca izlenen video tam yüklenir; komşu videolar sadece üst bilgi yükler (eskiden ±2 video önden yükleniyordu).
+- Dış depoda **çıkış (egress) ücretsiz** olan bir servis seç (Filebase, Cloudflare R2). Backblaze B2'de ücretsiz çıkış, depolamanın 3 katıyla sınırlıdır.
+- Dosyaları MongoDB'den dış depoya kopyalarken Render'dan çıkan trafik (videoların toplam boyutu kadar) bir kez harcanır.
+
 ## Depolama doldu mu? (Atlas 512 MB)
 
 Videolar varsayılan olarak MongoDB Atlas ücretsiz kümesinde (512 MB) saklanır. Dolunca Atlas yazmayı reddeder (`over your space quota`). Klipo bunu şöyle yönetir; **hiçbir hesap, video, yorum otomatik silinmez**:

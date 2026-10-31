@@ -73,18 +73,23 @@
       $$('video', feed).forEach((v) => (v.muted = K.muted));
     }
 
-    function setSrc(reel, on) {
+    // Bant genişliğini korumak için yalnızca izlenen video tam yüklenir; komşular yalnızca üst bilgi (metadata) yükler.
+    function setSrc(reel, on, active) {
       const vid = $('video', reel);
       const v = itemOf(reel.dataset.id);
       if (!v) return;
       const orig = $('.duet-orig', reel);
+      const pre = active ? 'auto' : 'metadata';
       if (on && !vid.getAttribute('src')) {
         vid.src = v.mediaUrl;
-        vid.preload = 'auto';
+        vid.preload = pre;
         if (orig && v.duet) {
           orig.src = v.duet.mediaUrl;
-          orig.preload = 'auto';
+          orig.preload = pre;
         }
+      } else if (on) {
+        vid.preload = pre; // komşu video etkin olunca tam yüklemeye geçer
+        if (orig) orig.preload = pre;
       } else if (!on && vid.getAttribute('src')) {
         vid.pause();
         vid.removeAttribute('src');
@@ -100,8 +105,8 @@
     function activate(index) {
       const reels = $$('.reel', feed);
       reels.forEach((r, i) => {
-        const near = Math.abs(i - index) <= 2;
-        setSrc(r, near);
+        const near = Math.abs(i - index) <= 1;
+        setSrc(r, near, i === index);
         const vid = $('video', r);
         if (i !== index) {
           vid.pause();

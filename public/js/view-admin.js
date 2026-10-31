@@ -93,7 +93,7 @@
           ${Object.keys(d.media.byKind).length ? `<p class="hint" style="padding:6px 16px 0">${Object.entries(d.media.byKind).map(([k, x]) => `${kinds[k] || k}: ${x.count} (${mb(x.bytes)})`).join(' · ')}</p>` : ''}
           <div class="card"><b>Dış depo</b>
             ${ex.configured
-              ? `<p class="hint" style="margin:4px 0 10px">Bağlı: ${esc(ex.info.host)} · kova ${esc(ex.info.bucket)}</p><button class="btn sm" id="st-test">Bağlantıyı dene</button>`
+              ? `<p class="hint" style="margin:4px 0 10px">Bağlı: ${esc(ex.info.host)} · kova ${esc(ex.info.bucket)}</p><p class="hint" style="margin:0 0 10px">Herkese açık videolar doğrudan buradan oynar; Render’ın ücretsiz internet trafiği (5 GB/ay) harcanmaz.</p><button class="btn sm" id="st-test">Bağlantıyı dene</button>`
               : `<p class="hint" style="margin:4px 0 10px">Ayarlı değil. Videolar şu an MongoDB’de duruyor; ücretsiz kota (${u ? mb(u.quotaBytes) : '512 MB'}) dolunca yeni yükleme yapılamaz. Ücretsiz bir S3 uyumlu depo bağlayınca yeni videolar oraya gider, eskiler yerinde kalır.</p>
                 <details><summary class="btn sm">Nasıl bağlanır?</summary><ol class="howto">
                   <li><b>Filebase</b> (5 GB ücretsiz, kart istemez), Cloudflare <b>R2</b> veya Backblaze <b>B2</b> (10 GB ücretsiz; kayıtta kart istenebilir) hesabı aç.</li>
